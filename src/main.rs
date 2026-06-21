@@ -30,6 +30,13 @@ fn main() -> eframe::Result<()> {
         make_diagram();
         return Ok(());
     }
+    if std::env::args().any(|a| a == "--testhttp") {
+        match update::debug_tag("cli", "cli") {
+            Some(tag) => println!("WinHTTP OK — cli/cli latest release tag: {tag}"),
+            None => println!("WinHTTP FAILED — no response/parse"),
+        }
+        return Ok(());
+    }
     if std::env::args().any(|a| a == "--imgcheck") {
         for (n, b) in [("ab6_base", include_bytes!("../assets/ab6_base.png").as_slice()),
                        ("mhg_stick", include_bytes!("../assets/mhg_stick.png").as_slice()),

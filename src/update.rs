@@ -110,6 +110,14 @@ pub fn latest() -> Option<(String, String)> {
     Some((tag.trim_start_matches('v').to_string(), url))
 }
 
+/// Debug helper: fetch the latest release tag for any public repo (verifies WinHTTP).
+pub fn debug_tag(owner: &str, repo: &str) -> Option<String> {
+    let path = format!("/repos/{owner}/{repo}/releases/latest");
+    let body = https_get("api.github.com", &path, "Accept: application/vnd.github+json\r\n")?;
+    let s = String::from_utf8_lossy(&body);
+    json_str(&s, "tag_name")
+}
+
 fn split_url(url: &str) -> Option<(String, String)> {
     let u = url.strip_prefix("https://").or_else(|| url.strip_prefix("http://"))?;
     let slash = u.find('/')?;
