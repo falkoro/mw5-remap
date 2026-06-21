@@ -1,0 +1,9 @@
+/target
+/dist
+*.old.exe
+*.new.exe
+MW5-Remap.exe
+libunwind.dll
+shot*.png
+*_crop.png
+*.log

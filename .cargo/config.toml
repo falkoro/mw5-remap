@@ -1,0 +1,5 @@
+# Statically link the LLVM-MinGW runtime (libunwind / libc++ / libwinpthread) so the
+# produced exe depends ONLY on system DLLs and boots by double-click anywhere.
+# Without this you get STATUS_DLL_NOT_FOUND (0xC0000135) unless LLVM-MinGW is on PATH.
+[target.x86_64-pc-windows-gnullvm]
+rustflags = ["-C", "link-arg=-static"]
