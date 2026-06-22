@@ -30,8 +30,15 @@ fn catalog() -> Vec<Action> {
     };
     use Kind::*;
     vec![
-        a("JoystickLookVertical", "Aim Up/Down", "Aiming", Axis),
-        a("JoystickLookHorizontal", "Aim Left/Right", "Aiming", Axis),
+        a("JoystickLookVertical", "Aim Up/Down (stick)", "Aiming", Axis),
+        a("JoystickLookHorizontal", "Aim Left/Right (stick)", "Aiming", Axis),
+        // POV hat -> looking. A digital hat key drives the look axis at +/- scale.
+        // The id is "AxisName@HatKey" so several keys can share one axis (MW5 allows
+        // multiple InputTypeToAxisKeyList lines per AxisName).
+        a("JoystickLookVertical@Joystick_Hat_1", "Look Up (POV hat)", "Aiming", Axis),
+        a("JoystickLookVertical@Joystick_Hat_5", "Look Down (POV hat)", "Aiming", Axis),
+        a("JoystickLookHorizontal@Joystick_Hat_3", "Look Right (POV hat)", "Aiming", Axis),
+        a("JoystickLookHorizontal@Joystick_Hat_7", "Look Left (POV hat)", "Aiming", Axis),
         a("JoystickThrottle", "Throttle / Gas", "Movement", Axis),
         a("JoystickStrafeRight", "Strafe Left/Right", "Movement", Axis),
         a("JoystickStrafeForward", "Move Fwd/Back", "Movement", Axis),
@@ -81,12 +88,49 @@ fn read_axes(text: &str) -> std::collections::HashMap<String, (String, f32)> {
                 let after = &rest[qend..];
                 let scale = field(after, "Scale=").and_then(|s| s.parse::<f32>().ok()).unwrap_or(1.0);
                 if let Some(key) = field(after, "Key=") {
-                    map.insert(axis.to_string(), (key.trim_end_matches(')').to_string(), scale));
+                    // Keep the FIRST line per AxisName (the primary/analog one); extra
+                    // keys on the same axis (e.g. POV-hat look) are loaded separately.
+                    map.entry(axis.to_string())
+                        .or_insert((key.trim_end_matches(')').to_string(), scale));
                 }
             }
         }
     }
     map
+}
+
+/// Split an axis row id into (AxisName, optional fixed Key). "Axis@Key" -> a
+/// multi-key row (one of several keys sharing an axis, e.g. POV hat -> look);
+/// plain "Axis" -> the primary single-line axis.
+fn split_axis_id(id: &str) -> (&str, Option<&str>) {
+    match id.split_once('@') {
+        Some((axis, key)) => (axis, Some(key)),
+        None => (id, None),
+    }
+}
+
+/// Byte span of the axis line for `axis` whose Key is exactly `key` (multi-key aware).
+fn axis_line_span_keyed(text: &str, axis: &str, key: &str) -> Option<(usize, usize)> {
+    let prefix = format!("InputTypeToAxisKeyList=(AxisName=\"{}\"", axis);
+    let suffix = format!(",Key={})", key);
+    let bytes = text.as_bytes();
+    let mut from = 0;
+    while let Some(rel) = text[from..].find(&prefix) {
+        let s = from + rel;
+        if s == 0 || bytes[s - 1] == b'\n' {
+            let mut e = text[s..].find('\n').map(|i| s + i).unwrap_or(text.len());
+            if e > s && bytes[e - 1] == b'\r' { e -= 1; }
+            if text[s..e].ends_with(&suffix) { return Some((s, e)); }
+        }
+        from = s + prefix.len();
+    }
+    None
+}
+
+/// Read the Scale of the axis line for `axis` whose Key is exactly `key`.
+fn axis_line_scale(text: &str, axis: &str, key: &str) -> Option<f32> {
+    let (s, e) = axis_line_span_keyed(text, axis, key)?;
+    field(&text[s..e], "Scale=").and_then(|v| v.parse::<f32>().ok())
 }
 
 /// Extract a `name=VALUE` field up to the next ',' or ')'.
@@ -212,31 +256,42 @@ impl GameProvider for Mw5 {
     fn actions(&self) -> Vec<Action> { catalog() }
 
     fn default_bindings(&self) -> Vec<Binding> {
-        // Known-good MW5 layout: aim on the base stick, gas + strafe on the pedals,
-        // weapons/utility on the stick & throttle buttons. Verify axes in the GUI.
+        // Known-good MW5 layout matched to the REAL hardware: the MOZA MRP pedals
+        // (Throttle role) expose ONLY axes — 0 buttons, no D-pad — so every button
+        // action lives on the AB6 base/MHG grip (Joystick role, 32 buttons + hat).
+        // Pedals carry just the throttle + strafe axes. Verify axis direction in-game.
         let b = |id: &str, token: &str, scale: f32| Binding { id: id.into(), token: token.into(), scale };
         vec![
+            // --- axes ---
             b("JoystickLookVertical", "Joystick_Axis1", 2.0),
             b("JoystickLookHorizontal", "Joystick_Axis2", 3.0),
-            b("JoystickThrottle", "Throttle_Axis1", 1.0),
-            b("JoystickStrafeRight", "Throttle_Axis2", -1.0),
+            // POV hat -> looking (4 ways). Token == the hat key; sign sets direction,
+            // magnitude sets look speed. Flip the sign in the GUI if a way is reversed.
+            b("JoystickLookVertical@Joystick_Hat_1", "Joystick_Hat_1", 2.0),   // up
+            b("JoystickLookVertical@Joystick_Hat_5", "Joystick_Hat_5", -2.0),  // down
+            b("JoystickLookHorizontal@Joystick_Hat_3", "Joystick_Hat_3", 3.0), // right
+            b("JoystickLookHorizontal@Joystick_Hat_7", "Joystick_Hat_7", -3.0),// left
+            b("JoystickThrottle", "Throttle_Axis1", 1.0),   // pedal axis
+            b("JoystickStrafeRight", "Throttle_Axis2", -1.0), // pedal axis
             b("JoystickLegRotation", "Joystick_Axis3", 1.0),
+            // --- weapons: all on the AB6 (Joystick) buttons/hat ---
             b("FireWeaponGroup1", "Joystick_Button1", 1.0),
             b("FireWeaponGroup2", "Joystick_Button2", 1.0),
             b("FireWeaponGroup3", "Joystick_Button3", 1.0),
             b("FireWeaponGroup4", "Joystick_Button4", 1.0),
-            b("FireWeaponGroup5", "Throttle_Button3", 1.0),
-            b("FireWeaponGroup6", "Throttle_Button2", 1.0),
-            b("ToggleWeaponGroup", "Throttle_Button6", 1.0),
-            b("ActivateJumpJets", "Throttle_Button1", 1.0),
-            b("SelectPreviousWeapon", "Throttle_DPad1_Up", 1.0),
-            b("SelectNextWeapon", "Throttle_DPad1_Down", 1.0),
-            b("SelectPreviousWeaponGroup", "Throttle_DPad1_Left", 1.0),
-            b("SelectNextWeaponGroup", "Throttle_DPad1_Right", 1.0),
-            b("CenterTorso", "Throttle_DPad2_Right", 1.0),
-            b("CenterLegs", "Throttle_DPad2_Left", 1.0),
-            b("TargetNearestHostileToCrosshair", "Joystick_Hat_7", 1.0),
-            b("TargetNextHostile", "Joystick_Hat_3", 1.0),
+            b("FireWeaponGroup5", "Joystick_Button5", 1.0),
+            b("FireWeaponGroup6", "Joystick_Button6", 1.0),
+            b("ToggleWeaponGroup", "Joystick_Button7", 1.0),
+            b("ActivateJumpJets", "Joystick_Button9", 1.0),
+            b("SelectPreviousWeapon", "Joystick_Button14", 1.0),
+            b("SelectNextWeapon", "Joystick_Button15", 1.0),
+            b("SelectPreviousWeaponGroup", "Joystick_Button16", 1.0),
+            b("SelectNextWeaponGroup", "Joystick_Button17", 1.0),
+            b("CenterTorso", "Joystick_Button18", 1.0),
+            b("CenterLegs", "Joystick_Button19", 1.0),
+            // targeting moved OFF the hat (the hat now looks) onto free AB6 buttons.
+            b("TargetNearestHostileToCrosshair", "Joystick_Button20", 1.0),
+            b("TargetNextHostile", "Joystick_Button21", 1.0),
             b("TogglePower", "Joystick_Button13", 1.0),
             b("ToggleOverride", "Joystick_Button10", 1.0),
             b("ToggleBattleGridPanel", "Joystick_Button8", 1.0),
@@ -254,9 +309,18 @@ impl GameProvider for Mw5 {
         for act in catalog() {
             match act.kind {
                 Kind::Axis => {
-                    let (token, scale) = axes.get(&act.id).cloned().unwrap_or_default();
-                    let token = if token == "None" { String::new() } else { token }; // show unbound, not literal "None"
-                    out.push(Binding { id: act.id, token, scale: if scale == 0.0 { 1.0 } else { scale } });
+                    let (axisname, fixed) = split_axis_id(&act.id);
+                    if let Some(key) = fixed {
+                        // multi-key row (e.g. POV hat -> look): bound iff its exact line exists.
+                        match axis_line_scale(&text, axisname, key) {
+                            Some(sc) => out.push(Binding { id: act.id.clone(), token: key.to_string(), scale: if sc == 0.0 { 1.0 } else { sc } }),
+                            None => out.push(Binding { id: act.id, token: String::new(), scale: 1.0 }),
+                        }
+                    } else {
+                        let (token, scale) = axes.get(axisname).cloned().unwrap_or_default();
+                        let token = if token == "None" { String::new() } else { token }; // show unbound, not literal "None"
+                        out.push(Binding { id: act.id, token, scale: if scale == 0.0 { 1.0 } else { scale } });
+                    }
                 }
                 Kind::Button => {
                     let token = btns.get(&act.id).cloned().unwrap_or_default();
@@ -285,13 +349,20 @@ impl GameProvider for Mw5 {
         let mut missing = Vec::new();
 
         // ---- axes: in-place line edit (preserves the rest of the file byte-for-byte) ----
+        // Multi-key rows ("Axis@Key", e.g. POV hat -> look) are located by their FIXED
+        // key (from the id) so a rebind rewrites that one line; primary rows match the
+        // first line for their AxisName. Missing lines are appended after the axis block.
         for b in bindings.iter().filter(|b| kinds.get(&b.id) == Some(&Kind::Axis) && !b.token.is_empty()) {
+            let (axisname, fixed) = split_axis_id(&b.id);
             let want = format!(
                 "InputTypeToAxisKeyList=(AxisName=\"{}\",Scale={:.6},Key={})",
-                b.id, b.scale, b.token
+                axisname, b.scale, b.token
             );
-            let needle = format!("InputTypeToAxisKeyList=(AxisName=\"{}\"", b.id);
-            if let Some((s, e)) = line_span(&text, &needle) {
+            let locate = match fixed {
+                Some(fixed_key) => axis_line_span_keyed(&text, axisname, fixed_key),
+                None => line_span(&text, &format!("InputTypeToAxisKeyList=(AxisName=\"{}\"", axisname)),
+            };
+            if let Some((s, e)) = locate {
                 if &text[s..e] != want.as_str() { changed.push(format!("{} -> {} (x{:.1})", b.id, b.token, b.scale)); }
                 text.replace_range(s..e, &want);
             } else if let Some(at) = last_axis_insert_point(&text) {

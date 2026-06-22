@@ -7,7 +7,7 @@
 
 use std::os::raw::c_void;
 
-pub const OWNER: &str = "REPLACE_ME";
+pub const OWNER: &str = "falkoro";
 pub const REPO: &str = "mw5-remap";
 
 type HInternet = *mut c_void;

@@ -26,6 +26,10 @@ fn main() -> eframe::Result<()> {
         apply_defaults();
         return Ok(());
     }
+    if std::env::args().any(|a| a == "--force-defaults") {
+        force_defaults();
+        return Ok(());
+    }
     if std::env::args().any(|a| a == "--diagram") {
         make_diagram();
         return Ok(());
@@ -90,6 +94,37 @@ fn apply_defaults() {
             for k in &kept { println!("   {k}"); }
             println!("\nNewly filled from defaults — {}:", filled.len());
             for f in &filled { println!("   {f}"); }
+        }
+        Err(e) => println!("SAVE FAILED: {e}"),
+    }
+}
+
+/// Overwrite EVERY catalog action with the known-good default layout, then save.
+/// Use this to repair a config that has bindings pointing at controls the real
+/// hardware doesn't have (e.g. throttle buttons on pedals that have none).
+fn force_defaults() {
+    use games::GameProvider;
+    let p = games::mw5::Mw5::new();
+    let mut rows = match p.load() { Ok(r) => r, Err(e) => { println!("LOAD FAILED: {e}"); return; } };
+    let defaults: std::collections::HashMap<String, games::Binding> =
+        p.default_bindings().into_iter().map(|b| (b.id.clone(), b)).collect();
+    let mut changed = Vec::new();
+    for r in rows.iter_mut() {
+        if let Some(d) = defaults.get(&r.id) {
+            if r.token != d.token || (r.scale - d.scale).abs() > 0.001 {
+                changed.push(format!("{}: {} -> {} (x{:.1})",
+                    r.id, if r.token.is_empty() { "(unbound)" } else { &r.token }, d.token, d.scale));
+            }
+            r.token = d.token.clone();
+            r.scale = d.scale;
+        }
+    }
+    match p.save(&rows) {
+        Ok(rep) => {
+            println!("Saved. Backup: {}", rep.backup);
+            println!("\nChanged {} binding(s):", changed.len());
+            for c in &changed { println!("   {c}"); }
+            if changed.is_empty() { println!("   (config already matches the known-good defaults)"); }
         }
         Err(e) => println!("SAVE FAILED: {e}"),
     }
