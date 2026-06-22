@@ -271,9 +271,13 @@ impl GameProvider for Mw5 {
             b("JoystickLookVertical@Joystick_Hat_5", "Joystick_Hat_5", -2.0),  // down
             b("JoystickLookHorizontal@Joystick_Hat_3", "Joystick_Hat_3", 3.0), // right
             b("JoystickLookHorizontal@Joystick_Hat_7", "Joystick_Hat_7", -3.0),// left
-            b("JoystickThrottle", "Throttle_Axis1", 1.0),   // pedal axis
-            b("JoystickStrafeRight", "Throttle_Axis2", -1.0), // pedal axis
-            b("JoystickLegRotation", "Joystick_Axis3", 1.0),
+            // MRP rudder pedals (Throttle role) -> turn the mech's legs. The rudder is
+            // the one reliable, self-centering pedal axis (winmm dwRpos -> HOTAS_RZAxis
+            // -> Throttle_Axis1). Throttle/gas stays on keyboard W/S (never touched);
+            // mechs don't strafe, so the strafe axes are left unbound. "" = unbind.
+            b("JoystickLegRotation", "Throttle_Axis1", 1.0),   // rudder slide -> turn L/R
+            b("JoystickThrottle", "Throttle_Axis2", 1.0),      // press a toe pedal -> forward
+            b("JoystickStrafeRight", "", 1.0),
             // --- weapons: all on the AB6 (Joystick) buttons/hat ---
             b("FireWeaponGroup1", "Joystick_Button1", 1.0),
             b("FireWeaponGroup2", "Joystick_Button2", 1.0),
@@ -290,8 +294,9 @@ impl GameProvider for Mw5 {
             b("CenterTorso", "Joystick_Button18", 1.0),
             b("CenterLegs", "Joystick_Button19", 1.0),
             // targeting moved OFF the hat (the hat now looks) onto free AB6 buttons.
+            // NB: MW5 only has Joystick_Button1..20 — Button21 is an invalid/dead token.
             b("TargetNearestHostileToCrosshair", "Joystick_Button20", 1.0),
-            b("TargetNextHostile", "Joystick_Button21", 1.0),
+            b("TargetNextHostile", "Joystick_Button12", 1.0),
             b("TogglePower", "Joystick_Button13", 1.0),
             b("ToggleOverride", "Joystick_Button10", 1.0),
             b("ToggleBattleGridPanel", "Joystick_Button8", 1.0),
@@ -335,6 +340,11 @@ impl GameProvider for Mw5 {
         let path = self.config_path();
         let mut text = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
 
+        // If the user locked the config (read-only, to stop MW5 resetting it), clear
+        // the flag just for our write and restore it after, so saving still works.
+        let was_locked = std::fs::metadata(&path).map(|m| m.permissions().readonly()).unwrap_or(false);
+        if was_locked { let _ = set_readonly(&path, false); }
+
         // backup
         let dir = Mw5::backup_dir();
         std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
@@ -373,6 +383,23 @@ impl GameProvider for Mw5 {
             }
         }
 
+        // ---- axes: unbind (remove the line) for rows explicitly set to empty ----
+        for b in bindings.iter().filter(|b| kinds.get(&b.id) == Some(&Kind::Axis) && b.token.is_empty()) {
+            let (axisname, fixed) = split_axis_id(&b.id);
+            let locate = match fixed {
+                Some(fixed_key) => axis_line_span_keyed(&text, axisname, fixed_key),
+                None => line_span(&text, &format!("InputTypeToAxisKeyList=(AxisName=\"{}\"", axisname)),
+            };
+            if let Some((s, e)) = locate {
+                let bytes = text.as_bytes();
+                let mut end = e;
+                if end < bytes.len() && bytes[end] == b'\r' { end += 1; }
+                if end < bytes.len() && bytes[end] == b'\n' { end += 1; }
+                text.replace_range(s..end, "");
+                changed.push(format!("{} -> (unbound)", b.id));
+            }
+        }
+
         // ---- buttons: paren-depth replacement inside the Joystick section ----
         if let Some(map_line) = text.lines().find(|l| l.starts_with("InputTypeToActionKeyMap=")) {
             let map_line = map_line.to_string();
@@ -390,6 +417,7 @@ impl GameProvider for Mw5 {
         }
 
         std::fs::write(&path, text).map_err(|e| e.to_string())?;
+        if was_locked { let _ = set_readonly(&path, true); } // re-lock as the user left it
         Ok(SaveReport { backup: backup.display().to_string(), changed, missing })
     }
 
@@ -425,4 +453,145 @@ impl GameProvider for Mw5 {
     fn running_processes(&self) -> Vec<String> {
         vec!["MechWarrior-Win64-Shipping".into(), "MW5Mercs".into()]
     }
+}
+
+// ===========================================================================
+// HOTASMappings.Remap — the SECOND file MW5 needs for joystick input.
+//
+// GameUserSettings.ini maps token -> action; this file maps the *physical*
+// device input -> token, keyed per device by VID/PID. Without a block for a
+// device, none of its buttons/axes reach the game, so the GUS bindings are
+// dead. The game ships this file with whatever HOTAS it first saw (here: stale
+// Thrustmaster blocks) and has no full in-game binding UI — you edit the file.
+// Format + vocabulary are from Piranha's official HOTAS Remapping PDF.
+// ===========================================================================
+
+/// Set/clear the read-only flag on a file.
+fn set_readonly(path: &std::path::Path, ro: bool) -> Result<(), String> {
+    let mut perm = std::fs::metadata(path).map_err(|e| e.to_string())?.permissions();
+    perm.set_readonly(ro);
+    std::fs::set_permissions(path, perm).map_err(|e| e.to_string())
+}
+
+/// True if GameUserSettings is currently locked (read-only) against MW5 resets.
+pub fn config_is_locked() -> bool {
+    Mw5::new().config_path().metadata().map(|m| m.permissions().readonly()).unwrap_or(false)
+}
+
+/// Lock/unlock GameUserSettings. Locking (read-only) stops MW5 from rewriting your
+/// joystick bindings back to its stock defaults when it launches. Trade-off: other
+/// in-game settings (graphics/audio) also won't save until you unlock.
+pub fn set_config_locked(lock: bool) -> Result<(), String> {
+    set_readonly(&Mw5::new().config_path(), lock)
+}
+
+/// Path to the live HOTASMappings.Remap (MW5_HOTAS overrides it, for tests).
+pub fn hotas_path() -> std::path::PathBuf {
+    if let Ok(p) = std::env::var("MW5_HOTAS") {
+        if !p.is_empty() { return std::path::PathBuf::from(p); }
+    }
+    let base = std::env::var("LOCALAPPDATA").unwrap_or_default();
+    std::path::Path::new(&base).join("MW5Mercs/Saved/SavedHOTAS/HOTASMappings.Remap")
+}
+
+/// Read `key` (e.g. "VID:") as a u16 from a hex `0x....` line inside a block.
+fn parse_hex_field(block: &str, key: &str) -> Option<u16> {
+    for line in block.lines() {
+        if let Some(rest) = line.trim().strip_prefix(key) {
+            let v = rest.trim().trim_start_matches("0x").trim_start_matches("0X");
+            return u16::from_str_radix(v, 16).ok();
+        }
+    }
+    None
+}
+
+/// Drop every START_BIND block whose (VID,PID) is in `targets`, keep the rest
+/// byte-for-byte. Lets us refresh our MOZA blocks without disturbing a user's
+/// other devices (e.g. the stock Thrustmaster entries).
+fn strip_device_blocks(text: &str, targets: &[(u16, u16)]) -> String {
+    let bytes = text.as_bytes();
+    let mut starts = Vec::new();
+    let mut from = 0;
+    while let Some(rel) = text[from..].find("START_BIND") {
+        let s = from + rel;
+        if s == 0 || bytes[s - 1] == b'\n' { starts.push(s); }
+        from = s + "START_BIND".len();
+    }
+    if starts.is_empty() { return text.to_string(); }
+    let mut out = String::new();
+    out.push_str(&text[..starts[0]]); // preamble before the first block
+    for (i, &st) in starts.iter().enumerate() {
+        let en = if i + 1 < starts.len() { starts[i + 1] } else { text.len() };
+        let block = &text[st..en];
+        let matched = match (parse_hex_field(block, "VID:"), parse_hex_field(block, "PID:")) {
+            (Some(v), Some(p)) => targets.iter().any(|&(tv, tp)| tv == v && tp == p),
+            _ => false,
+        };
+        if !matched { out.push_str(block); }
+    }
+    out
+}
+
+/// Build the two MOZA device blocks (canonical mapping; see the PDF example).
+fn moza_blocks() -> String {
+    let ax = |inp: &str, out: &str, dz: f32| {
+        format!("AXIS: InAxis={}, OutAxis={}, Invert=FALSE, Offset=-0.5, DeadZoneMin=-{:.2}, DeadZoneMax={:.2}, MapToDeadZone=TRUE\r\n", inp, out, dz, dz)
+    };
+    let mut s = String::new();
+
+    // --- AB6 FFB Base -> Joystick (aim + all buttons + hat) ---
+    s.push_str("START_BIND\r\n");
+    s.push_str("NAME: MOZA AB6 FFB Base\r\n");
+    s.push_str(&format!("VID: 0x{:04X}\r\n", BASE.0));
+    s.push_str(&format!("PID: 0x{:04X}\r\n", BASE.1));
+    for i in 1..=20 { // MW5 has Joystick_Button1..20 only
+        s.push_str(&format!("BUTTON: InButton=GenericUSBController_Button{i}, OutButtons=Joystick_Button{i}\r\n"));
+    }
+    for i in 1..=8 {
+        s.push_str(&format!("BUTTON: InButton=GenericUSBController_Hat{i}, OutButtons=Joystick_Hat_{i}\r\n"));
+    }
+    s.push_str(&ax("HOTAS_YAxis", "Joystick_Axis1", 0.05)); // pitch  -> aim up/down
+    s.push_str(&ax("HOTAS_XAxis", "Joystick_Axis2", 0.05)); // roll   -> aim left/right
+    s.push_str("\r\n\r\n");
+
+    // --- MRP Rudder Pedals -> Throttle (rudder = leg turn) ---
+    s.push_str("START_BIND\r\n");
+    s.push_str("NAME: MOZA MRP Rudder Pedals\r\n");
+    s.push_str(&format!("VID: 0x{:04X}\r\n", PEDALS.0));
+    s.push_str(&format!("PID: 0x{:04X}\r\n", PEDALS.1));
+    s.push_str(&ax("HOTAS_RZAxis", "Throttle_Axis1", 0.08)); // rudder slide -> leg turn (L/R)
+    // A toe pedal -> throttle/forward. It rests at 0 and presses to full, so it is NOT
+    // centered: Offset=0 (0..1 = idle..full). Swap to HOTAS_XAxis if the other toe.
+    s.push_str("AXIS: InAxis=HOTAS_YAxis, OutAxis=Throttle_Axis2, Invert=FALSE, Offset=0.0, DeadZoneMin=-0.02, DeadZoneMax=0.02, MapToDeadZone=TRUE\r\n");
+    s.push_str("\r\n");
+    s
+}
+
+/// Write/refresh the MOZA blocks in HOTASMappings.Remap (preserving other
+/// devices), backing up any existing file first. Returns the backup path.
+pub fn write_hotas_mappings() -> Result<String, String> {
+    let path = hotas_path();
+    let existing = std::fs::read_to_string(&path).unwrap_or_default();
+
+    let mut backup = String::from("(no prior file)");
+    if path.exists() {
+        let dir = Mw5::backup_dir();
+        std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+        let b = dir.join(format!("HOTASMappings_{}.Remap", stamp));
+        std::fs::copy(&path, &b).map_err(|e| e.to_string())?;
+        backup = b.display().to_string();
+    }
+
+    let cleaned = strip_device_blocks(&existing, &[BASE, PEDALS]);
+    let mut out = cleaned.trim_end().to_string();
+    if !out.is_empty() { out.push_str("\r\n\r\n\r\n"); }
+    out.push_str(&moza_blocks());
+
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    std::fs::write(&path, out).map_err(|e| e.to_string())?;
+    Ok(backup)
 }

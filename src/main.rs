@@ -30,6 +30,18 @@ fn main() -> eframe::Result<()> {
         force_defaults();
         return Ok(());
     }
+    if std::env::args().any(|a| a == "--write-hotas") {
+        write_hotas();
+        return Ok(());
+    }
+    if std::env::args().any(|a| a == "--lock" || a == "--unlock") {
+        let lock = std::env::args().any(|a| a == "--lock");
+        match games::mw5::set_config_locked(lock) {
+            Ok(()) => println!("GameUserSettings.ini is now {}.", if lock { "LOCKED (read-only) — MW5 can't reset your bindings" } else { "unlocked" }),
+            Err(e) => println!("FAILED: {e}"),
+        }
+        return Ok(());
+    }
     if std::env::args().any(|a| a == "--diagram") {
         make_diagram();
         return Ok(());
@@ -136,6 +148,21 @@ fn force_defaults() {
             if changed.is_empty() { println!("   (config already matches the known-good defaults)"); }
         }
         Err(e) => println!("SAVE FAILED: {e}"),
+    }
+}
+
+/// Write/refresh the MOZA blocks in HOTASMappings.Remap — the file MW5 actually
+/// reads for joystick input (maps physical device -> token). Without this, the
+/// GameUserSettings token bindings are inert in-game.
+fn write_hotas() {
+    match games::mw5::write_hotas_mappings() {
+        Ok(backup) => {
+            println!("Wrote HOTAS mappings: {}", games::mw5::hotas_path().display());
+            println!("Backup: {}", backup);
+            println!("\nMOZA AB6 base -> Joystick (aim + Button1..20 + Hat_1..8)");
+            println!("MOZA MRP pedals -> Throttle (rudder = leg turn)");
+        }
+        Err(e) => println!("WRITE FAILED: {e}"),
     }
 }
 

@@ -7,3 +7,7 @@ libunwind.dll
 shot*.png
 *_crop.png
 *.log
+# generated artifacts (not source)
+MW5-Controls.html
+/app-screenshot.png
+/diagram-export.png

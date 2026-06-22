@@ -225,6 +225,43 @@ impl eframe::App for App {
                         }
                     }
                 }
+                // MW5 needs a SECOND file (HOTASMappings.Remap) mapping the physical
+                // MOZA stick/pedals -> tokens, or the bindings above do nothing in-game.
+                // Static (device->token), so this is a run-once button, not per-save.
+                if avail && games[*selected].name().contains("MechWarrior")
+                    && ui.add(egui::Button::new("🎮 Fix HOTAS file"))
+                        .on_hover_text("Write SavedHOTAS\\HOTASMappings.Remap so MW5 reads your MOZA AB6 + pedals. Run once (and after plugging in a new stick).")
+                        .clicked()
+                {
+                    let p = games[*selected].as_ref();
+                    if sys::any_process_running(&p.running_processes()) {
+                        *status = "Close MW5 first — it overwrites HOTAS mappings on exit.".into();
+                    } else {
+                        match crate::games::mw5::write_hotas_mappings() {
+                            Ok(b) => *status = format!("HOTAS file written ✓  MOZA stick+pedals now mapped  (backup {})", file_name(&b)),
+                            Err(e) => *status = format!("HOTAS write failed: {}", e),
+                        }
+                    }
+                }
+                // Lock toggle: MW5 rewrites GameUserSettings (resetting joystick
+                // bindings to stock) on launch. Read-only stops that. Trade-off:
+                // other in-game settings won't save until unlocked.
+                if avail && games[*selected].name().contains("MechWarrior") {
+                    let locked = crate::games::mw5::config_is_locked();
+                    let label = if locked { "🔓 Unlock config" } else { "🔒 Lock config" };
+                    let hover = if locked {
+                        "Config is LOCKED so MW5 can't reset your bindings. Click to unlock (lets graphics/audio settings save again)."
+                    } else {
+                        "Make GameUserSettings read-only so MW5 stops resetting your joystick bindings on launch."
+                    };
+                    if ui.add(egui::Button::new(label)).on_hover_text(hover).clicked() {
+                        match crate::games::mw5::set_config_locked(!locked) {
+                            Ok(()) => *status = if locked { "Config unlocked — MW5 can save settings again.".into() }
+                                                 else { "Config LOCKED ✓  MW5 can no longer reset your bindings.".into() },
+                            Err(e) => *status = format!("Lock toggle failed: {}", e),
+                        }
+                    }
+                }
                 if ui.add_enabled(avail, egui::Button::new("📊 Export diagram")).clicked() {
                     let html = crate::diagram::render(actions, rows);
                     let out = std::env::current_exe().ok()
