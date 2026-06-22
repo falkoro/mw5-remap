@@ -75,20 +75,26 @@ fn json_str(s: &str, key: &str) -> Option<String> {
     Some(rest[..end].to_string())
 }
 
-/// First release asset URL ending in .exe.
+/// Pick the app-exe asset URL. A release also carries the installer
+/// (MW5-Remap-Setup.exe); we must NOT self-update to that. Prefer the exact
+/// "MW5-Remap.exe", and never accept an asset whose name contains "Setup".
 fn find_exe_asset(s: &str) -> Option<String> {
     let key = "\"browser_download_url\":\"";
     let mut from = 0;
+    let mut fallback: Option<String> = None;
     while let Some(rel) = s[from..].find(key) {
         let i = from + rel + key.len();
         let rest = &s[i..];
         if let Some(end) = rest.find('"') {
             let url = &rest[..end];
-            if url.to_lowercase().ends_with(".exe") { return Some(url.to_string()); }
+            let low = url.to_lowercase();
             from = i + end;
+            if !low.ends_with(".exe") || low.contains("setup") { continue; }
+            if low.ends_with("/mw5-remap.exe") { return Some(url.to_string()); }
+            fallback.get_or_insert_with(|| url.to_string());
         } else { break; }
     }
-    None
+    fallback
 }
 
 fn parse_ver(v: &str) -> (u32, u32, u32) {

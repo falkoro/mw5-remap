@@ -39,6 +39,15 @@ fn main() -> eframe::Result<()> {
             Some(tag) => println!("WinHTTP OK — cli/cli latest release tag: {tag}"),
             None => println!("WinHTTP FAILED — no response/parse"),
         }
+        println!("current version: {}", update::current_version());
+        match update::latest() {
+            Some((ver, url)) => {
+                println!("own repo latest: v{ver}");
+                println!("  update asset:  {url}");
+                println!("  newer than current? {}", update::is_newer(&ver));
+            }
+            None => println!("own repo latest: none / OWNER unset"),
+        }
         return Ok(());
     }
     if std::env::args().any(|a| a == "--imgcheck") {
