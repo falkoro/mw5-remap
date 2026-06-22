@@ -3,7 +3,9 @@
 //! raw joystick press into that game's binding token. MW5 is the first provider;
 //! Star Citizen and MSFS 2024 are registered as "coming soon" stubs.
 
+pub mod ac7;
 pub mod mw5;
+pub mod sc;
 
 use crate::input::Device;
 
@@ -84,25 +86,7 @@ pub trait GameProvider {
 pub fn all() -> Vec<Box<dyn GameProvider>> {
     vec![
         Box::new(mw5::Mw5::new()),
-        Box::new(ComingSoon { name: "Star Citizen (coming soon)" }),
-        Box::new(ComingSoon { name: "MSFS 2024 (coming soon)" }),
+        Box::new(ac7::Ac7::new()),
+        Box::new(sc::Sc::new()),
     ]
-}
-
-/// Placeholder provider for games whose support isn't built yet.
-pub struct ComingSoon {
-    pub name: &'static str,
-}
-
-impl GameProvider for ComingSoon {
-    fn name(&self) -> &str { self.name }
-    fn available(&self) -> bool { false }
-    fn config_path(&self) -> std::path::PathBuf { std::path::PathBuf::new() }
-    fn actions(&self) -> Vec<Action> { Vec::new() }
-    fn load(&self) -> Result<Vec<Binding>, String> { Err("Not implemented yet.".into()) }
-    fn save(&self, _: &[Binding]) -> Result<SaveReport, String> { Err("Not implemented yet.".into()) }
-    fn role_of(&self, _: &Device, _: usize) -> Role { Role::Ignored }
-    fn button_token(&self, _: &Device, _: u32, _: usize) -> Option<String> { None }
-    fn axis_token(&self, _: &Device, _: usize, _: usize) -> Option<String> { None }
-    fn pov_token(&self, _: &Device, _: u32, _: usize) -> Option<String> { None }
 }

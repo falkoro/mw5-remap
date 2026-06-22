@@ -63,6 +63,19 @@ fn catalog() -> Vec<Action> {
         a("ToggleOverride", "Toggle Override (heat)", "Systems", Button),
         a("ToggleBattleGridPanel", "Battle Grid", "Systems", Button),
         a("ToggleNightVision", "Night Vision", "Systems", Button),
+        // Camera — the 20 buttons are all used, so these default onto the free hat
+        // diagonals (Hat_2/4/8). ToggleView switches 1st-person cockpit <-> 3rd-person.
+        a("ToggleView", "1st / 3rd Person View", "Camera", Button),
+        a("ToggleFreeLook", "Free Look (hold)", "Camera", Button),
+        a("CycleZoom", "Cycle Zoom", "Camera", Button),
+        // Essentials found in the audit (were missing). ChainFire gets the last free
+        // hat diagonal; the rest are catalogued for binding (keyboard keeps working).
+        a("ToggleChainFire", "Chain Fire", "Weapons", Button),
+        a("ClearTarget", "Clear Target", "Targeting", Button),
+        a("TargetNearestHostile", "Target Nearest Hostile", "Targeting", Button),
+        a("DispatchLance", "Lance: Attack My Target", "Command", Button),
+        a("CancelOrders", "Lance: Cancel Orders", "Command", Button),
+        a("EjectPilot", "Eject", "Systems", Button),
     ]
 }
 
@@ -301,6 +314,11 @@ impl GameProvider for Mw5 {
             b("ToggleOverride", "Joystick_Button10", 1.0),
             b("ToggleBattleGridPanel", "Joystick_Button8", 1.0),
             b("ToggleNightVision", "Joystick_Button11", 1.0),
+            // Camera on the free hat diagonals (cardinals 1/3/5/7 already drive look).
+            b("ToggleView", "Joystick_Hat_2", 1.0),     // hat ↗ = 1st/3rd person
+            b("ToggleFreeLook", "Joystick_Hat_8", 1.0), // hat ↖ = free look
+            b("CycleZoom", "Joystick_Hat_4", 1.0),      // hat ↘ = zoom
+            b("ToggleChainFire", "Joystick_Hat_6", 1.0),// hat ↙ = chain fire (last free way)
         ]
     }
 
@@ -532,43 +550,57 @@ fn strip_device_blocks(text: &str, targets: &[(u16, u16)]) -> String {
     out
 }
 
-/// Build the two MOZA device blocks (canonical mapping; see the PDF example).
-fn moza_blocks() -> String {
-    let ax = |inp: &str, out: &str, dz: f32| {
-        format!("AXIS: InAxis={}, OutAxis={}, Invert=FALSE, Offset=-0.5, DeadZoneMin=-{:.2}, DeadZoneMax={:.2}, MapToDeadZone=TRUE\r\n", inp, out, dz, dz)
-    };
+/// The MW5 OutAxis token for a device axis, by role + meaning (None = no slot).
+/// Matches the GameUserSettings token->action contract.
+fn out_axis_token(role: Role, sem: crate::devices::Sem) -> Option<&'static str> {
+    use crate::devices::Sem::*;
+    match (role, sem) {
+        (Role::Joystick, Pitch) => Some("Joystick_Axis1"),
+        (Role::Joystick, Roll) => Some("Joystick_Axis2"),
+        (Role::Joystick, Yaw) => Some("Joystick_Axis3"),
+        (Role::Throttle, Yaw) => Some("Throttle_Axis1"),    // rudder/pedal -> leg turn
+        (Role::Throttle, Throttle) => Some("Throttle_Axis2"), // toe/lever -> forward
+        _ => None,
+    }
+}
+
+/// Build one START_BIND block for a known device (buttons capped at MW5's 20,
+/// hat -> Hat_1..8, axes -> the role's tokens; throttle axes aren't centered).
+fn device_block(d: &crate::devices::KnownDevice) -> String {
+    let role = d.role.label(); // "Joystick" | "Throttle"
     let mut s = String::new();
-
-    // --- AB6 FFB Base -> Joystick (aim + all buttons + hat) ---
     s.push_str("START_BIND\r\n");
-    s.push_str("NAME: MOZA AB6 FFB Base\r\n");
-    s.push_str(&format!("VID: 0x{:04X}\r\n", BASE.0));
-    s.push_str(&format!("PID: 0x{:04X}\r\n", BASE.1));
-    for i in 1..=20 { // MW5 has Joystick_Button1..20 only
-        s.push_str(&format!("BUTTON: InButton=GenericUSBController_Button{i}, OutButtons=Joystick_Button{i}\r\n"));
+    s.push_str(&format!("NAME: {}\r\n", d.name));
+    s.push_str(&format!("VID: 0x{:04X}\r\n", d.vid));
+    s.push_str(&format!("PID: 0x{:04X}\r\n", d.pid));
+    for i in 1..=d.buttons.min(20) {
+        s.push_str(&format!("BUTTON: InButton=GenericUSBController_Button{i}, OutButtons={role}_Button{i}\r\n"));
     }
-    for i in 1..=8 {
-        s.push_str(&format!("BUTTON: InButton=GenericUSBController_Hat{i}, OutButtons=Joystick_Hat_{i}\r\n"));
+    if d.has_hat {
+        for i in 1..=8 {
+            s.push_str(&format!("BUTTON: InButton=GenericUSBController_Hat{i}, OutButtons={role}_Hat_{i}\r\n"));
+        }
     }
-    s.push_str(&ax("HOTAS_YAxis", "Joystick_Axis1", 0.05)); // pitch  -> aim up/down
-    s.push_str(&ax("HOTAS_XAxis", "Joystick_Axis2", 0.05)); // roll   -> aim left/right
-    s.push_str("\r\n\r\n");
-
-    // --- MRP Rudder Pedals -> Throttle (rudder = leg turn) ---
-    s.push_str("START_BIND\r\n");
-    s.push_str("NAME: MOZA MRP Rudder Pedals\r\n");
-    s.push_str(&format!("VID: 0x{:04X}\r\n", PEDALS.0));
-    s.push_str(&format!("PID: 0x{:04X}\r\n", PEDALS.1));
-    s.push_str(&ax("HOTAS_RZAxis", "Throttle_Axis1", 0.08)); // rudder slide -> leg turn (L/R)
-    // A toe pedal -> throttle/forward. It rests at 0 and presses to full, so it is NOT
-    // centered: Offset=0 (0..1 = idle..full). Swap to HOTAS_XAxis if the other toe.
-    s.push_str("AXIS: InAxis=HOTAS_YAxis, OutAxis=Throttle_Axis2, Invert=FALSE, Offset=0.0, DeadZoneMin=-0.02, DeadZoneMax=0.02, MapToDeadZone=TRUE\r\n");
-    s.push_str("\r\n");
+    for a in d.axes {
+        if let Some(tok) = out_axis_token(d.role, a.sem) {
+            let throttle = a.sem == crate::devices::Sem::Throttle;
+            let (offset, dz) = if throttle { (0.0, 0.02) } else { (-0.5, 0.05) };
+            s.push_str(&format!(
+                "AXIS: InAxis={}, OutAxis={}, Invert=FALSE, Offset={:.1}, DeadZoneMin=-{:.2}, DeadZoneMax={:.2}, MapToDeadZone=TRUE\r\n",
+                a.hotas, tok, offset, dz, dz
+            ));
+        }
+    }
     s
 }
 
-/// Write/refresh the MOZA blocks in HOTASMappings.Remap (preserving other
-/// devices), backing up any existing file first. Returns the backup path.
+fn append_block(out: &mut String, blk: &str) {
+    if !out.is_empty() { out.push_str("\r\n\r\n\r\n"); }
+    out.push_str(blk);
+}
+
+/// Write/refresh every known device's block in HOTASMappings.Remap (preserving
+/// any other devices), backing up the existing file first. Returns the backup path.
 pub fn write_hotas_mappings() -> Result<String, String> {
     let path = hotas_path();
     let existing = std::fs::read_to_string(&path).unwrap_or_default();
@@ -584,10 +616,19 @@ pub fn write_hotas_mappings() -> Result<String, String> {
         backup = b.display().to_string();
     }
 
-    let cleaned = strip_device_blocks(&existing, &[BASE, PEDALS]);
-    let mut out = cleaned.trim_end().to_string();
-    if !out.is_empty() { out.push_str("\r\n\r\n\r\n"); }
-    out.push_str(&moza_blocks());
+    // Strip the blocks we manage (real devices, by VID/PID) and re-emit them.
+    let targets: Vec<(u16, u16)> = crate::devices::registry().iter()
+        .filter(|d| !d.custom).map(|d| (d.vid, d.pid)).collect();
+    let mut out = strip_device_blocks(&existing, &targets).trim_end().to_string();
+    for d in crate::devices::registry().iter().filter(|d| !d.custom) {
+        append_block(&mut out, &device_block(d));
+    }
+    // Custom-pedal template: add once and never clobber the user's later edits.
+    if !existing.contains("Custom Pedal") {
+        for d in crate::devices::registry().iter().filter(|d| d.custom) {
+            append_block(&mut out, &device_block(d));
+        }
+    }
 
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;

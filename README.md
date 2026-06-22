@@ -1,6 +1,10 @@
 # MW5 Remap
 
-A small, fast **visual joystick binding editor for MechWarrior 5: Mercenaries**. Point-and-click your HOTAS bindings, see them laid out on photos of your real sticks, and — crucially — have them *actually work in-game*, because MW5's joystick input is more complicated than it looks.
+A small, fast **visual joystick binding editor for MechWarrior 5: Mercenaries** — with **Ace Combat 7** support too. Point-and-click your HOTAS bindings, see them laid out on photos of your real sticks, and — crucially — have them *actually work in-game*, because each game's joystick handling is more complicated than it looks.
+
+**Games (all real — no stubs):** MechWarrior 5: Mercenaries, Ace Combat 7 (`Input.ini`), Star Citizen (`actionmaps.xml`). *MSFS 2024 Game Pass isn't supported — it keeps bindings in a protected UWP container that can't be reliably file-edited.*
+
+**Devices:** MOZA AB6 + MHG, MOZA MRP pedals, Thrustmaster Warthog (stick + throttle), and a **custom-pedal template** you can fill in — all defined once in `src/devices.rs` and rendered into each game's format.
 
 ![App screenshot](docs/screenshot.png)
 
@@ -48,6 +52,12 @@ It also handles two MW5 gotchas:
 
 > Close MW5 before saving — it overwrites its config on exit.
 
+## Ace Combat 7
+
+AC7 binds a device's axis/button **directly** to a flight action in per-device `[Joystick-…]` sections of `%LOCALAPPDATA%\BANDAI NAMCO Entertainment\ACE COMBAT 7\Config\Input.ini`. Pick **Ace Combat 7** in the game dropdown, bind, and save — or apply the built-in Warthog + pedals layout.
+
+> ⚠️ AC7 ignores joysticks unless **Steam Input is disabled** for the game (Steam → AC7 → Properties → Controller → *Disable Steam Input*).
+
 ## Hardware
 
 Built and tuned for a **MOZA AB6 FFB base + MHG grip** (the "Joystick") and **MOZA MRP rudder pedals** (the "Throttle"), but the file formats and most of the app are generic. The default layout maps:
@@ -60,7 +70,8 @@ The same actions are scriptable (handy for headless fixes):
 
 | Flag | Does |
 | --- | --- |
-| `--write-hotas` | write/refresh the MOZA blocks in `HOTASMappings.Remap` |
+| `--write-hotas` | write/refresh every known device's block in `HOTASMappings.Remap` |
+| `--ac7-setup` | write a default Warthog + pedals layout to Ace Combat 7's `Input.ini` |
 | `--force-defaults` | overwrite every action with the known-good default layout |
 | `--apply-defaults` | fill only *unbound* actions from the defaults |
 | `--lock` / `--unlock` | toggle the read-only lock on `GameUserSettings.ini` |

@@ -2,6 +2,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod app;
+mod devices;
 mod diagram;
 mod games;
 mod hidhide;
@@ -32,6 +33,14 @@ fn main() -> eframe::Result<()> {
     }
     if std::env::args().any(|a| a == "--write-hotas") {
         write_hotas();
+        return Ok(());
+    }
+    if std::env::args().any(|a| a == "--ac7-setup") {
+        ac7_setup();
+        return Ok(());
+    }
+    if std::env::args().any(|a| a == "--sc-test") {
+        sc_test();
         return Ok(());
     }
     if std::env::args().any(|a| a == "--lock" || a == "--unlock") {
@@ -163,6 +172,50 @@ fn write_hotas() {
             println!("MOZA MRP pedals -> Throttle (rudder = leg turn)");
         }
         Err(e) => println!("WRITE FAILED: {e}"),
+    }
+}
+
+/// Round-trip test of the Star Citizen actionmaps.xml writer on a temp file.
+fn sc_test() {
+    use games::GameProvider;
+    let tmp = std::env::temp_dir().join("sc_test_actionmaps.xml");
+    let _ = std::fs::remove_file(&tmp);
+    std::env::set_var("SC_CONFIG", &tmp);
+    let p = games::sc::Sc::new();
+    let mk = |id: &str, tok: &str| games::Binding { id: id.into(), token: tok.into(), scale: 1.0 };
+    // Two pretend VKB sticks (231D:0200 / 231D:0201).
+    let rows = vec![
+        mk("v_pitch", "231D0200|y"), mk("v_yaw", "231D0200|rotz"), mk("v_roll", "231D0200|x"),
+        mk("v_attack1_group1", "231D0200|button1"),
+        mk("v_throttle_abs", "231D0201|z"), mk("v_target_nearest_hostile", "231D0201|button2"),
+    ];
+    match p.save(&rows) {
+        Ok(rep) => {
+            println!("saved {} binding(s)\n----- actionmaps.xml -----", rep.changed.len());
+            println!("{}", std::fs::read_to_string(&tmp).unwrap_or_default());
+            println!("----- reload round-trip -----");
+            for b in p.load().unwrap_or_default().iter().filter(|b| !b.token.is_empty()) {
+                println!("  {:<26} = {}", b.id, b.token);
+            }
+        }
+        Err(e) => println!("SC TEST FAILED: {e}"),
+    }
+    let _ = std::fs::remove_file(&tmp);
+}
+
+/// Apply the default Ace Combat 7 HOTAS layout and write Config/Input.ini.
+fn ac7_setup() {
+    use games::GameProvider;
+    let p = games::ac7::Ac7::new();
+    let rows = p.default_bindings();
+    match p.save(&rows) {
+        Ok(rep) => {
+            println!("Wrote AC7 Input.ini: {}", p.config_path().display());
+            println!("Backup: {}", rep.backup);
+            println!("\nBound {} actions across your HOTAS. Reminder: DISABLE Steam Input for AC7.", rep.changed.len());
+            for c in &rep.changed { println!("   {c}"); }
+        }
+        Err(e) => println!("AC7 SETUP FAILED: {e}"),
     }
 }
 

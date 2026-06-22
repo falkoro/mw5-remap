@@ -41,7 +41,12 @@ const fn m(nx: f32, ny: f32, num: &'static str, label: &'static str, token: &'st
 // The POV hat does light up (we can read the hat octant directly).
 const MHG_MARKERS: &[Marker] = &[
     m(0.41, 0.21, "", "Red button", ""),
-    m(0.50, 0.27, "", "POV hat — look around (8-way)", "Joystick_Hat"),
+    // POV hat: one label per WAY, stacked non-overlapping; each lights individually.
+    // Cardinals = look; diagonals = camera/chain-fire (see hat spokes).
+    m(0.485, 0.245, "", "Hat ↑ Look Up", "Joystick_Hat_1"),
+    m(0.475, 0.275, "", "Hat ← Look Left", "Joystick_Hat_7"),
+    m(0.525, 0.255, "", "Hat → Look Right", "Joystick_Hat_3"),
+    m(0.515, 0.295, "", "Hat ↓ Look Down", "Joystick_Hat_5"),
     m(0.585, 0.205, "", "Thumb hat (4-way)", ""),
     m(0.645, 0.215, "", "Green button", ""),
     m(0.45, 0.315, "", "Rocker switch", ""),
