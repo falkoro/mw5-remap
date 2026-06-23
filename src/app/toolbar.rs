@@ -17,11 +17,12 @@ pub(super) fn top_bar(
     games: &[Box<dyn GameProvider>],
     selected: &mut usize,
     rows: &mut [Binding],
-    actions: &[Action],
+    _actions: &[Action],
     status: &mut String,
     elevated: bool,
     hidden: &mut Vec<String>,
     hide_state: &PathBuf,
+    show_export_dialog: &mut bool,
 ) -> bool {
     let mut reload = false;
     egui::TopBottomPanel::top("top").show(ctx, |ui| {
@@ -91,15 +92,10 @@ pub(super) fn top_bar(
                     }
                 }
             }
-            if ui.add_enabled(avail, egui::Button::new("📊 Export diagram")).clicked() {
-                let html = crate::diagram::render(actions, rows);
-                let out = std::env::current_exe().ok()
-                    .and_then(|e| e.parent().map(|d| d.join("MW5-Controls.html")))
-                    .unwrap_or_else(|| std::path::PathBuf::from("MW5-Controls.html"));
-                match std::fs::write(&out, html) {
-                    Ok(_) => { sys::open_uri(&out.to_string_lossy()); *status = format!("Exported + opened: {}", out.display()); }
-                    Err(e) => *status = format!("Export failed: {}", e),
-                }
+            if ui.add_enabled(avail, egui::Button::new("📊 Export diagram"))
+                .on_hover_text("Export the device images (with callouts) as PNG and/or PDF").clicked()
+            {
+                *show_export_dialog = true;
             }
             ui.separator();
             let p = games[*selected].as_ref();

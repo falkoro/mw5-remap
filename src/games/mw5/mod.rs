@@ -190,6 +190,19 @@ impl GameProvider for Mw5 {
     fn axis_token(&self, dev: &Device, axis_index: usize, idx: usize) -> Option<String> {
         match role_for(dev, idx) {
             Role::Ignored => None,
+            // AB6: map each winmm axis to the OutAxis the .Remap actually routes it to,
+            // so press-to-bind captures a token that works in-game (incl. the analog
+            // thumb hat on winmm U/V -> Joystick_Axis4/Axis5).
+            Role::Joystick if (dev.vid, dev.pid) == BASE => {
+                let n = match axis_index {
+                    1 => 1, // Y gimbal -> pitch
+                    0 => 2, // X gimbal -> roll
+                    4 => 4, // U thumb-hat
+                    5 => 5, // V thumb-hat
+                    other => other + 1,
+                };
+                Some(format!("Joystick_Axis{n}"))
+            }
             r => Some(format!("{}_Axis{}", r.label(), axis_index + 1)),
         }
     }

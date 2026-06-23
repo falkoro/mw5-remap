@@ -58,7 +58,7 @@ const MHG_MARKERS: &[Marker] = &[
     m(0.465, 0.295, "", "Hat ↙", "Joystick_Hat_6"),
     m(0.445, 0.270, "", "Hat ←", "Joystick_Hat_7"),
     m(0.465, 0.245, "", "Hat ↖", "Joystick_Hat_8"),
-    m(0.645, 0.215, "", "Thumb hat (5-way)", ""),
+    m(0.645, 0.215, "", "Thumb hat (analog → look)", "Joystick_Axis4"),
     // Buttons show the bound action ("Trigger · Fire Weapon Group 1"). The button
     // NUMBER per physical control is firmware-dependent, so these follow the app's
     // default layout (Button1..6 = fire groups) — press one to confirm via the live
@@ -121,10 +121,12 @@ fn disp_size(tex: &egui::TextureHandle, w: f32) -> egui::Vec2 {
 /// the toe-throttle (rests at 0) when pressed in. Indices match games::mw5 .Remap.
 fn axis_deflected(devices: &[Device], token: &str) -> bool {
     let (id, idx, centered) = match token {
-        "Joystick_Axis1" => (AB6, 1, true),  // HOTAS_YAxis
-        "Joystick_Axis2" => (AB6, 0, true),  // HOTAS_XAxis
+        "Joystick_Axis1" => (AB6, 1, true),  // HOTAS_YAxis (gimbal pitch)
+        "Joystick_Axis2" => (AB6, 0, true),  // HOTAS_XAxis (gimbal roll)
+        "Joystick_Axis4" => (AB6, 4, true),  // HOTAS_UAxis (analog thumb hat)
+        "Joystick_Axis5" => (AB6, 5, true),  // HOTAS_VAxis (analog thumb hat)
         "Throttle_Axis1" => (MRP, 3, true),  // HOTAS_RZAxis (rudder)
-        "Throttle_Axis2" => (MRP, 1, false), // a toe pedal (rests at 0)
+        "Throttle_Axis2" => (MRP, 0, false), // right toe (winmm X, rests at 0)
         _ => return false,
     };
     match devices.iter().find(|d| (d.vid, d.pid) == id) {
@@ -154,7 +156,7 @@ pub fn hot_tokens(devices: &[Device], p: &dyn GameProvider) -> Vec<String> {
             if let Some(t) = p.pov_token(d, o, i) { hot.push(t); }
         }
     }
-    for tok in ["Joystick_Axis1", "Joystick_Axis2", "Throttle_Axis1", "Throttle_Axis2"] {
+    for tok in ["Joystick_Axis1", "Joystick_Axis2", "Joystick_Axis4", "Joystick_Axis5", "Throttle_Axis1", "Throttle_Axis2"] {
         if axis_deflected(devices, tok) { hot.push(tok.to_string()); }
     }
     hot
@@ -181,7 +183,22 @@ fn image_block(
 
 /// Render the device reference panel: live readout + numbered images whose callouts
 /// show what ACTION is bound to each control (`bound`: token -> action label).
-pub fn sidebar(ui: &mut egui::Ui, tex: &Textures, devices: &[Device], p: &dyn GameProvider, show_labels: &mut bool, bound: &HashMap<String, String>) {
+#[allow(clippy::too_many_arguments)]
+pub fn sidebar(
+    ui: &mut egui::Ui,
+    tex: &Textures,
+    devices: &[Device],
+    p: &dyn GameProvider,
+    show_labels: &mut bool,
+    bound: &HashMap<String, String>,
+    filter: Option<&crate::app::ExportOpts>,
+) {
+    // During an export capture, `filter` selects which devices to render so the
+    // screenshot only contains the chosen ones. Normal frames pass `None` (all on).
+    let (want_stick, want_base, want_pedals) = match filter {
+        Some(f) => (f.stick, f.base, f.pedals),
+        None => (true, true, true),
+    };
     // Build the live "hot" token set: pressed buttons, POV octant, deflected axes.
     let hot = hot_tokens(devices, p);
     let mut readout = hot.clone();
@@ -212,14 +229,22 @@ pub fn sidebar(ui: &mut egui::Ui, tex: &Textures, devices: &[Device], p: &dyn Ga
         let iw = ui.available_width();
         ui.set_max_width(iw); // bound the inner ui so ui.columns splits correctly
         // Main flight stick: full-width and prominent (it carries the most controls).
-        image_block(ui, "MHG Flight Stick", &tex.stick, iw, MHG_MARKERS, MHG_HATS, &hot, oct, *show_labels, bound);
-        ui.add_space(6.0);
+        if want_stick {
+            image_block(ui, "MHG Flight Stick", &tex.stick, iw, MHG_MARKERS, MHG_HATS, &hot, oct, *show_labels, bound);
+            ui.add_space(6.0);
+        }
         // Secondary devices in a 2-up grid (scales as more get added: base, pedals,
         // throttle, …). Each takes half the width.
-        ui.columns(2, |cols| {
-            let cw = (iw - 12.0) / 2.0;
-            image_block(&mut cols[0], "AB6 Base", &tex.base, cw, BASE_MARKERS, &[], &hot, None, *show_labels, bound);
-            image_block(&mut cols[1], "MRP Pedals", &tex.pedals, cw, PEDAL_MARKERS, &[], &hot, None, *show_labels, bound);
-        });
+        if want_base || want_pedals {
+            ui.columns(2, |cols| {
+                let cw = (iw - 12.0) / 2.0;
+                if want_base {
+                    image_block(&mut cols[0], "AB6 Base", &tex.base, cw, BASE_MARKERS, &[], &hot, None, *show_labels, bound);
+                }
+                if want_pedals {
+                    image_block(&mut cols[1], "MRP Pedals", &tex.pedals, cw, PEDAL_MARKERS, &[], &hot, None, *show_labels, bound);
+                }
+            });
+        }
     });
 }

@@ -18,6 +18,10 @@ pub(super) fn catalog() -> Vec<Action> {
         a("JoystickLookVertical@Joystick_Hat_5", "Look Down (POV hat)", "Aiming", Axis),
         a("JoystickLookHorizontal@Joystick_Hat_3", "Look Right (POV hat)", "Aiming", Axis),
         a("JoystickLookHorizontal@Joystick_Hat_7", "Look Left (POV hat)", "Aiming", Axis),
+        // Analog thumb-hat (Hall-effect, winmm U/V -> Joystick_Axis4/Axis5): added as a
+        // SECOND look input alongside the gimbal, so the thumb hat pans the view smoothly.
+        a("JoystickLookVertical@Joystick_Axis4", "Thumb-hat Look Up/Down", "Aiming", Axis),
+        a("JoystickLookHorizontal@Joystick_Axis5", "Thumb-hat Look Left/Right", "Aiming", Axis),
         a("JoystickThrottle", "Throttle / Gas", "Movement", Axis),
         a("JoystickStrafeRight", "Strafe Left/Right", "Movement", Axis),
         a("JoystickStrafeForward", "Move Fwd/Back", "Movement", Axis),
@@ -102,6 +106,9 @@ pub(super) fn default_bindings() -> Vec<Binding> {
         b("JoystickLookVertical@Joystick_Hat_5", "Joystick_Hat_5", -2.0),  // down
         b("JoystickLookHorizontal@Joystick_Hat_3", "Joystick_Hat_3", 3.0), // right
         b("JoystickLookHorizontal@Joystick_Hat_7", "Joystick_Hat_7", -3.0),// left
+        // analog thumb-hat -> smooth look (winmm U/V via .Remap -> Joystick_Axis4/5)
+        b("JoystickLookVertical@Joystick_Axis4", "Joystick_Axis4", 2.0),
+        b("JoystickLookHorizontal@Joystick_Axis5", "Joystick_Axis5", 3.0),
         // MOZA MRP pedals (Throttle role): RIGHT toe = move forward (the throttle
         // axis), rudder swing-arm = turn the legs. The right toe rests at 0 and
         // presses to max -> JoystickThrottle goes 0..forward (offset 0 in .Remap).
