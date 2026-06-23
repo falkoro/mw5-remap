@@ -82,18 +82,26 @@ fn main() -> eframe::Result<()> {
         }
         return Ok(());
     }
-    let options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default()
-            .with_inner_size([1500.0, 940.0])
-            .with_min_inner_size([1000.0, 640.0])
-            .with_title("MW5 Remap — joystick binding editor"),
-        ..Default::default()
-    };
+    let mut viewport = egui::ViewportBuilder::default()
+        .with_inner_size([1500.0, 940.0])
+        .with_min_inner_size([1000.0, 640.0])
+        .with_title("MW5 Remap — joystick binding editor");
+    if let Some(icon) = load_icon() {
+        viewport = viewport.with_icon(icon);
+    }
+    let options = eframe::NativeOptions { viewport, ..Default::default() };
     eframe::run_native(
         "MW5 Remap",
         options,
         Box::new(|cc| Ok(Box::new(app::App::new(cc)))),
     )
+}
+
+/// The window/taskbar icon, decoded from the embedded MiniMax logo (None on failure).
+fn load_icon() -> Option<egui::IconData> {
+    let img = image::load_from_memory(include_bytes!("../assets/logo.png")).ok()?.to_rgba8();
+    let (width, height) = img.dimensions();
+    Some(egui::IconData { rgba: img.into_raw(), width, height })
 }
 
 /// Fill every UNBOUND action with the known-good default layout, then save.

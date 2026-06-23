@@ -15,6 +15,7 @@ use std::collections::HashMap;
 const STICK_PNG: &[u8] = include_bytes!("../assets/mhg_stick.png");
 const BASE_PNG: &[u8] = include_bytes!("../assets/ab6_base.png");
 const PEDALS_JPG: &[u8] = include_bytes!("../assets/mrp_pedals.jpg");
+const LOGO_PNG: &[u8] = include_bytes!("../assets/logo.png");
 
 // MOZA device ids (must match games::mw5 — used to read the right axis for highlight).
 const AB6: (u16, u16) = (0x346E, 0x1002);
@@ -81,6 +82,7 @@ pub struct Textures {
     pub stick: egui::TextureHandle,
     pub base: egui::TextureHandle,
     pub pedals: egui::TextureHandle,
+    pub logo: egui::TextureHandle,
 }
 
 fn decode(ctx: &egui::Context, name: &str, bytes: &[u8]) -> Option<egui::TextureHandle> {
@@ -95,6 +97,7 @@ pub fn load_textures(ctx: &egui::Context) -> Option<Textures> {
         stick: decode(ctx, "mhg_stick", STICK_PNG)?,
         base: decode(ctx, "ab6_base", BASE_PNG)?,
         pedals: decode(ctx, "mrp_pedals", PEDALS_JPG)?,
+        logo: decode(ctx, "logo", LOGO_PNG)?,
     })
 }
 
@@ -297,9 +300,17 @@ pub fn sidebar(ui: &mut egui::Ui, tex: &Textures, devices: &[Device], p: &dyn Ga
 
     let oct = ab6_octant(devices);
     egui::ScrollArea::vertical().show(ui, |ui| {
-        let iw = ui.available_width().max(380.0);
+        let iw = ui.available_width();
+        ui.set_max_width(iw); // bound the inner ui so ui.columns splits correctly
+        // Main flight stick: full-width and prominent (it carries the most controls).
         image_block(ui, "MHG Flight Stick", &tex.stick, iw, MHG_MARKERS, MHG_HATS, &hot, oct, *show_labels, bound);
-        image_block(ui, "AB6 FFB Base", &tex.base, iw * 0.9, BASE_MARKERS, &[], &hot, None, *show_labels, bound);
-        image_block(ui, "MRP Rudder Pedals", &tex.pedals, iw, PEDAL_MARKERS, &[], &hot, None, *show_labels, bound);
+        ui.add_space(6.0);
+        // Secondary devices in a 2-up grid (scales as more get added: base, pedals,
+        // throttle, …). Each takes half the width.
+        ui.columns(2, |cols| {
+            let cw = (iw - 12.0) / 2.0;
+            image_block(&mut cols[0], "AB6 Base", &tex.base, cw, BASE_MARKERS, &[], &hot, None, *show_labels, bound);
+            image_block(&mut cols[1], "MRP Pedals", &tex.pedals, cw, PEDAL_MARKERS, &[], &hot, None, *show_labels, bound);
+        });
     });
 }

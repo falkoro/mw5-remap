@@ -468,7 +468,10 @@ impl eframe::App for App {
 
             ui.add_space(2.0);
             ui.horizontal(|ui| {
-                ui.heading("🎮 Cockpit Bindings");
+                if let Some(tex) = textures.as_ref() {
+                    ui.add(egui::Image::new(&tex.logo).fit_to_exact_size(egui::vec2(30.0, 30.0)).rounding(6.0));
+                }
+                ui.heading("Cockpit Bindings");
                 ui.label(egui::RichText::new(
                     "— click a chip, then press the control / move the axis (Esc cancels). A chip turns green when you use it.",
                 ).color(egui::Color32::from_rgb(95, 100, 115)));

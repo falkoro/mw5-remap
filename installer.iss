@@ -3,7 +3,7 @@
 ; Build with:  ISCC.exe installer.iss   (output: dist\MW5-Remap-Setup.exe)
 
 #define MyAppName "MW5 Remap"
-#define MyAppVersion "0.3.3"
+#define MyAppVersion "0.3.4"
 #define MyAppExe "MW5-Remap.exe"
 
 [Setup]
