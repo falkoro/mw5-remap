@@ -41,7 +41,6 @@ const fn m(nx: f32, ny: f32, num: &'static str, label: &'static str, token: &'st
 // don't guess them here — use the live board below to map a button to its number.
 // The POV hat does light up (we can read the hat octant directly).
 const MHG_MARKERS: &[Marker] = &[
-    m(0.41, 0.21, "", "Red button", ""),
     // POV hat: ALL 8 positions, each shows the action bound to it ("Hat ↗ · <action>")
     // and lights individually. Cardinals usually = look; diagonals = camera/chain-fire.
     m(0.500, 0.235, "", "Hat ↑", "Joystick_Hat_1"),
@@ -53,10 +52,15 @@ const MHG_MARKERS: &[Marker] = &[
     m(0.445, 0.270, "", "Hat ←", "Joystick_Hat_7"),
     m(0.465, 0.245, "", "Hat ↖", "Joystick_Hat_8"),
     m(0.645, 0.215, "", "Thumb hat (5-way)", ""),
-    m(0.45, 0.345, "", "Rocker switch", ""),
-    m(0.55, 0.335, "", "Thumb button", ""),
-    m(0.46, 0.45, "", "Trigger — fire", ""),
-    m(0.37, 0.49, "", "Pinky flip (DEF)", ""),
+    // Buttons show the bound action ("Trigger · Fire Weapon Group 1"). The button
+    // NUMBER per physical control is firmware-dependent, so these follow the app's
+    // default layout (Button1..6 = fire groups) — press one to confirm via the live
+    // green light, and rebind in the list if a number is off.
+    m(0.46, 0.45, "", "Trigger", "Joystick_Button1"),
+    m(0.41, 0.21, "", "Red button", "Joystick_Button2"),
+    m(0.55, 0.335, "", "Thumb button", "Joystick_Button4"),
+    m(0.45, 0.345, "", "Rocker switch", "Joystick_Button5"),
+    m(0.37, 0.49, "", "Pinky flip", "Joystick_Button6"),
 ];
 
 // AB6 gimbal -> the two aim axes. Numbers = the Joystick_Axis index (= the token).
@@ -68,8 +72,9 @@ const BASE_MARKERS: &[Marker] = &[
 
 // MRP pedals -> Throttle axes. Number = the Throttle_Axis index (= the token).
 const PEDAL_MARKERS: &[Marker] = &[
-    m(0.50, 0.74, "1", "Rudder slide", "Throttle_Axis1"),
-    m(0.30, 0.40, "2", "Right toe", "Throttle_Axis2"),
+    m(0.50, 0.78, "1", "Rudder (turn legs)", "Throttle_Axis1"),
+    m(0.66, 0.40, "2", "Right toe → forward", "Throttle_Axis2"),
+    m(0.34, 0.40, "2", "Left toe → reverse", "Throttle_Axis2"),
 ];
 
 pub struct Textures {
@@ -292,8 +297,9 @@ pub fn sidebar(ui: &mut egui::Ui, tex: &Textures, devices: &[Device], p: &dyn Ga
 
     let oct = ab6_octant(devices);
     egui::ScrollArea::vertical().show(ui, |ui| {
-        image_block(ui, "MHG Flight Stick", &tex.stick, 360.0, MHG_MARKERS, MHG_HATS, &hot, oct, *show_labels, bound);
-        image_block(ui, "AB6 FFB Base", &tex.base, 320.0, BASE_MARKERS, &[], &hot, None, *show_labels, bound);
-        image_block(ui, "MRP Rudder Pedals", &tex.pedals, 360.0, PEDAL_MARKERS, &[], &hot, None, *show_labels, bound);
+        let iw = ui.available_width().max(380.0);
+        image_block(ui, "MHG Flight Stick", &tex.stick, iw, MHG_MARKERS, MHG_HATS, &hot, oct, *show_labels, bound);
+        image_block(ui, "AB6 FFB Base", &tex.base, iw * 0.9, BASE_MARKERS, &[], &hot, None, *show_labels, bound);
+        image_block(ui, "MRP Rudder Pedals", &tex.pedals, iw, PEDAL_MARKERS, &[], &hot, None, *show_labels, bound);
     });
 }

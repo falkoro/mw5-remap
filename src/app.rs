@@ -152,12 +152,57 @@ fn persist(path: &PathBuf, paths: &[String]) {
     let _ = std::fs::write(path, paths.join("\r\n"));
 }
 
-const CAPTURING: egui::Color32 = egui::Color32::from_rgb(230, 170, 40); // orange: listening
+const CAPTURING: egui::Color32 = egui::Color32::from_rgb(235, 170, 45); // orange: listening
 const LIVE: egui::Color32 = egui::Color32::from_rgb(70, 210, 110);      // green: control active
+const STICK_COL: egui::Color32 = egui::Color32::from_rgb(86, 156, 235); // Joystick-role device
+const THROTTLE_COL: egui::Color32 = egui::Color32::from_rgb(235, 150, 60); // Throttle-role device
+const UNBOUND_COL: egui::Color32 = egui::Color32::from_rgb(120, 128, 145);
+const TEXT_MAIN: egui::Color32 = egui::Color32::from_rgb(38, 42, 54);   // dark: readable on the light panel
+const LIVE_TXT: egui::Color32 = egui::Color32::from_rgb(20, 140, 72);   // green readable on light
+const CAP_TXT: egui::Color32 = egui::Color32::from_rgb(180, 110, 0);    // amber readable on light
+// extra colours for games with many physical devices (AC7/SC: one per VID/PID).
+const DEV_PALETTE: [egui::Color32; 6] = [
+    egui::Color32::from_rgb(86, 156, 235), egui::Color32::from_rgb(235, 150, 60),
+    egui::Color32::from_rgb(120, 200, 120), egui::Color32::from_rgb(200, 120, 220),
+    egui::Color32::from_rgb(230, 110, 110), egui::Color32::from_rgb(110, 205, 210),
+];
 
-/// One row of the Cockpit Bindings grid: action label, editable token, Bind
-/// button, and (for axes) invert/scale. The label + token glow green the instant
-/// the bound control is physically active, so you can see what you just touched.
+/// The colour that identifies which physical device a token belongs to.
+fn device_color(token: &str) -> egui::Color32 {
+    if token.starts_with("Throttle") {
+        THROTTLE_COL
+    } else if token.starts_with("Joystick") {
+        STICK_COL
+    } else if let Some((id, _)) = token.split_once('|') {
+        // AC7/SC "VVVVPPPP|input": stable colour per device id.
+        let h = id.bytes().fold(0u32, |a, b| a.wrapping_mul(31).wrapping_add(b as u32));
+        DEV_PALETTE[(h as usize) % DEV_PALETTE.len()]
+    } else {
+        UNBOUND_COL
+    }
+}
+
+/// Friendly control name without the device/role prefix: "Joystick_Button1" ->
+/// "Button 1", "Throttle_Axis2" -> "Axis 2", "Joystick_Hat_3" -> "Hat 3", and
+/// "044F0402|Y:R" -> "Y:R". The device is shown by colour instead of the prefix.
+fn pretty_token(token: &str) -> String {
+    if token.is_empty() { return "unbound".into(); }
+    let body = token
+        .strip_prefix("Joystick_")
+        .or_else(|| token.strip_prefix("Throttle_"))
+        .map(|s| s.replace('_', " "))
+        .or_else(|| token.split_once('|').map(|(_, i)| i.to_string()))
+        .unwrap_or_else(|| token.to_string());
+    // insert a space before a trailing number run ("Button1" -> "Button 1").
+    match body.find(|c: char| c.is_ascii_digit()) {
+        Some(p) if p > 0 && body.as_bytes()[p - 1] != b' ' => format!("{} {}", &body[..p], &body[p..]),
+        _ => body,
+    }
+}
+
+/// One row of the Cockpit Bindings grid: action label, a colour-coded "chip"
+/// showing the bound control (click it to re-bind), a clear button, and (for axes)
+/// invert/scale. The chip turns green the instant its control is physically active.
 #[allow(clippy::too_many_arguments)]
 fn binding_row(
     ui: &mut egui::Ui,
@@ -171,22 +216,28 @@ fn binding_row(
     hot: &[String],
 ) {
     let capturing = capture.as_ref().map(|c| c.row == i).unwrap_or(false);
-    let live = !rows[i].token.is_empty() && hot.iter().any(|h| h == &rows[i].token);
+    let token = rows[i].token.clone();
+    let live = !token.is_empty() && hot.iter().any(|h| h == &token);
 
-    if capturing {
-        ui.colored_label(CAPTURING, format!("● {}", actions[i].label));
+    // action label — green while its control is live, amber while (re)binding
+    let lbl_col = if capturing { CAP_TXT } else if live { LIVE_TXT } else { TEXT_MAIN };
+    ui.colored_label(lbl_col, &actions[i].label);
+
+    // the chip: a big colour-coded button. Colour = which device; click = re-bind.
+    let (text, fill) = if capturing {
+        ("press a control…".to_string(), CAPTURING)
     } else if live {
-        ui.colored_label(LIVE, format!("🟢 {}", actions[i].label));
+        (pretty_token(&token), LIVE)
+    } else if token.is_empty() {
+        ("＋ bind".to_string(), UNBOUND_COL)
     } else {
-        ui.label(&actions[i].label);
-    }
-
-    let mut edit = egui::TextEdit::singleline(&mut rows[i].token).hint_text("unbound").desired_width(168.0);
-    if live { edit = edit.text_color(LIVE); }
-    ui.add(edit);
-
-    let btn_label = if capturing { "press…" } else { "Bind" };
-    if ui.button(btn_label).clicked() {
+        (pretty_token(&token), device_color(&token))
+    };
+    let txt_col = if token.is_empty() && !capturing { egui::Color32::from_rgb(180, 188, 205) } else { egui::Color32::BLACK };
+    let chip = egui::Button::new(egui::RichText::new(text).color(txt_col).strong())
+        .fill(fill)
+        .min_size(egui::vec2(150.0, 28.0));
+    if ui.add(chip).on_hover_text("Click, then press the control / move the axis. Esc cancels.").clicked() {
         if capturing {
             *capture = None;
         } else {
@@ -199,6 +250,15 @@ fn binding_row(
             *capture = Some(Capture { row: i, kind: actions[i].kind, ignore, baseline });
             *status = format!("Listening… do the control for \"{}\" (Esc to cancel)", actions[i].label);
         }
+    }
+
+    // clear button (only when bound)
+    if !token.is_empty() {
+        if ui.small_button("✕").on_hover_text("Clear this binding").clicked() {
+            rows[i].token.clear();
+        }
+    } else {
+        ui.label("");
     }
 
     if actions[i].kind == Kind::Axis {
@@ -383,7 +443,7 @@ impl eframe::App for App {
             ui.add_space(4.0);
         });
 
-        egui::SidePanel::left("devices").resizable(true).default_width(370.0).show(ctx, |ui| {
+        egui::SidePanel::left("devices").resizable(true).default_width(440.0).show(ctx, |ui| {
             if let Some(tex) = textures.as_ref() {
                 crate::visual::sidebar(ui, tex, devices, games[*selected].as_ref(), show_labels, &bound);
             } else {
@@ -404,8 +464,20 @@ impl eframe::App for App {
             ui.horizontal(|ui| {
                 ui.heading("🎮 Cockpit Bindings");
                 ui.label(egui::RichText::new(
-                    "— click Bind, then move the axis / press the button (Esc cancels). A bound control glows green when you use it (see also \"Active now\" in the left panel).",
-                ).weak());
+                    "— click a chip, then press the control / move the axis (Esc cancels). A chip turns green when you use it.",
+                ).color(egui::Color32::from_rgb(95, 100, 115)));
+            });
+            // Device colour legend (which colour = which physical device).
+            ui.horizontal(|ui| {
+                let chip = |ui: &mut egui::Ui, col: egui::Color32, txt: &str| {
+                    egui::Frame::none().fill(col).inner_margin(egui::Margin::symmetric(7.0, 2.0)).rounding(4.0).show(ui, |ui| {
+                        ui.label(egui::RichText::new(txt).color(egui::Color32::BLACK).strong());
+                    });
+                };
+                ui.label(egui::RichText::new("Devices:").color(TEXT_MAIN));
+                chip(ui, STICK_COL, "Stick / Joystick");
+                chip(ui, THROTTLE_COL, "Throttle / Pedals");
+                chip(ui, LIVE, "active now");
             });
             ui.separator();
 
@@ -480,7 +552,7 @@ impl eframe::App for App {
             });
         egui::Area::new(egui::Id::new("footer_status"))
             .order(egui::Order::Foreground)
-            .anchor(egui::Align2::LEFT_BOTTOM, egui::vec2(380.0, -8.0))
+            .anchor(egui::Align2::LEFT_BOTTOM, egui::vec2(450.0, -8.0))
             .show(ctx, |ui| {
                 egui::Frame::popup(ui.style()).fill(egui::Color32::from_rgb(28, 32, 44)).show(ui, |ui| {
                     ui.label(egui::RichText::new(status.as_str()).strong());
