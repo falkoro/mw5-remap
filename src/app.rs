@@ -2,7 +2,7 @@
 //! provider. Each frame we poll joysticks; if a capture is active, the next new
 //! button/axis becomes the binding. Devices/HidHide/launch live in the side modules.
 
-use crate::games::{self, Action, Binding, GameProvider, Kind, Role};
+use crate::games::{self, Action, Binding, GameProvider, Kind};
 use crate::{hidhide, input, sys};
 use eframe::egui;
 use std::collections::{HashMap, HashSet};
@@ -181,7 +181,7 @@ fn binding_row(
         ui.label(&actions[i].label);
     }
 
-    let mut edit = egui::TextEdit::singleline(&mut rows[i].token).hint_text("unbound").desired_width(118.0);
+    let mut edit = egui::TextEdit::singleline(&mut rows[i].token).hint_text("unbound").desired_width(168.0);
     if live { edit = edit.text_color(LIVE); }
     ui.add(edit);
 
@@ -244,6 +244,13 @@ impl eframe::App for App {
 
         let App { games, selected, actions, rows, devices, capture, status, elevated, hidden, hide_state, textures, show_labels, update } = self;
         let mut reload = false;
+
+        // token -> bound action label, so the device diagram can show WHAT is bound
+        // to each control (not just the control's name).
+        let bound: HashMap<String, String> = rows.iter()
+            .filter(|b| !b.token.is_empty())
+            .filter_map(|b| actions.iter().find(|a| a.id == b.id).map(|a| (b.token.clone(), a.label.clone())))
+            .collect();
 
         let pending_update = update.lock().unwrap().clone();
         if let Some((ver, url)) = pending_update {
@@ -376,24 +383,9 @@ impl eframe::App for App {
             ui.add_space(4.0);
         });
 
-        egui::TopBottomPanel::bottom("bottom").show(ctx, |ui| {
-            ui.add_space(2.0);
-            ui.label(egui::RichText::new(status.as_str()).strong());
-            ui.horizontal_wrapped(|ui| {
-                for (idx, dev) in devices.iter().enumerate() {
-                    let role = games[*selected].role_of(dev, idx);
-                    let tag = match role { Role::Joystick => "Joystick", Role::Throttle => "Throttle", Role::Ignored => "ignored" };
-                    let pressed: Vec<String> = dev.pressed_buttons().iter().map(|b| b.to_string()).collect();
-                    let extra = if pressed.is_empty() { String::new() } else { format!("  btn {}", pressed.join(",")) };
-                    ui.label(format!("#{} [{}] {}{}   |", dev.id, tag, dev.name, extra));
-                }
-            });
-            ui.add_space(2.0);
-        });
-
         egui::SidePanel::left("devices").resizable(true).default_width(370.0).show(ctx, |ui| {
             if let Some(tex) = textures.as_ref() {
-                crate::visual::sidebar(ui, tex, devices, games[*selected].as_ref(), show_labels);
+                crate::visual::sidebar(ui, tex, devices, games[*selected].as_ref(), show_labels, &bound);
             } else {
                 ui.label("Loading device images…");
             }
@@ -421,6 +413,7 @@ impl eframe::App for App {
             // whole control map fits with far less scrolling. One column row needs
             // ~470px; pick the column count that fits the current central width.
             let avail_w = ui.available_width();
+            let avail_h = ui.available_height(); // bound each column's scroll so it can't paint over the footer
             let ncols = ((avail_w / 500.0).floor() as usize).clamp(1, 3);
             let col_w = avail_w / ncols as f32 - 16.0; // minus scrollbar/gutter
             let mut col_groups: Vec<Vec<&(String, Vec<usize>)>> = vec![Vec::new(); ncols];
@@ -435,23 +428,64 @@ impl eframe::App for App {
             // on-screen half), each with its own vertical scroll. Wrapping ui.columns
             // *inside* one ScrollArea breaks: the scroll area's inner ui is
             // horizontally unbounded, so the split lands the 2nd column off-screen.
-            ui.columns(ncols, |cols| {
-                for (ci, (col, groups_in_col)) in cols.iter_mut().zip(&col_groups).enumerate() {
-                    egui::ScrollArea::vertical().id_salt(("bindcol", ci)).show(col, |ui| {
-                        ui.set_max_width(col_w); // the scroll area is unbounded wide; clamp the grid
+            // ONE outer vertical ScrollArea (directly in the central panel, so its
+            // height is bounded — it clips/scrolls and never paints over the footer),
+            // with set_max_width so ui.columns splits the real width into equal halves.
+            let _ = (avail_h, col_w);
+            egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
+                ui.set_max_width(avail_w);
+                ui.columns(ncols, |cols| {
+                    for (col, groups_in_col) in cols.iter_mut().zip(&col_groups) {
                         for (cat, idxs) in groups_in_col {
-                            ui.add_space(3.0);
-                            ui.strong(cat);
-                            egui::Grid::new(format!("grid_{cat}")).num_columns(4).spacing([8.0, 3.0]).striped(true).show(ui, |ui| {
+                            col.add_space(3.0);
+                            col.strong(cat);
+                            egui::Grid::new(format!("grid_{cat}")).num_columns(4).spacing([8.0, 3.0]).striped(true).show(col, |ui| {
                                 for &i in idxs.iter() {
                                     binding_row(ui, i, actions, rows, capture, devices, p, status, &hot);
                                 }
                             });
                         }
-                    });
-                }
+                    }
+                });
             });
         });
+
+        // Footer overlays. A real TopBottomPanel::bottom gets overpainted by the
+        // central columns here, so we float these on top of everything instead:
+        // build branch/version + manual update at the bottom-right, status at the
+        // bottom-left.
+        egui::Area::new(egui::Id::new("footer_build"))
+            .order(egui::Order::Foreground)
+            .anchor(egui::Align2::RIGHT_BOTTOM, egui::vec2(-10.0, -8.0))
+            .show(ctx, |ui| {
+                egui::Frame::popup(ui.style()).fill(egui::Color32::from_rgb(28, 32, 44)).show(ui, |ui| {
+                    ui.horizontal(|ui| {
+                        let branch = match env!("GIT_BRANCH") { "" => "local", b => b };
+                        let hash = env!("GIT_HASH");
+                        let tag = if hash.is_empty() { format!("{branch} · v{}", crate::update::current_version()) }
+                                  else { format!("{branch}@{hash} · v{}", crate::update::current_version()) };
+                        ui.label(egui::RichText::new(tag).monospace().color(egui::Color32::from_rgb(150, 165, 190)));
+                        if ui.button("⟳ Update").on_hover_text("Check GitHub for a newer release and install it").clicked() {
+                            match crate::update::latest() {
+                                Some((ver, url)) if crate::update::is_newer(&ver) => {
+                                    *update.lock().unwrap() = Some((ver.clone(), url));
+                                    *status = format!("Update available: v{ver} — click \"Update now\" in the banner above.");
+                                }
+                                Some((ver, _)) => *status = format!("You're up to date (v{}). Latest published is v{ver}.", crate::update::current_version()),
+                                None => *status = "Update check failed — no connection, or no release published yet.".into(),
+                            }
+                        }
+                    });
+                });
+            });
+        egui::Area::new(egui::Id::new("footer_status"))
+            .order(egui::Order::Foreground)
+            .anchor(egui::Align2::LEFT_BOTTOM, egui::vec2(380.0, -8.0))
+            .show(ctx, |ui| {
+                egui::Frame::popup(ui.style()).fill(egui::Color32::from_rgb(28, 32, 44)).show(ui, |ui| {
+                    ui.label(egui::RichText::new(status.as_str()).strong());
+                });
+            });
 
         if reload { self.load_selected(); }
         ctx.request_repaint_after(Duration::from_millis(30));

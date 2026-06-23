@@ -10,6 +10,7 @@
 use crate::games::GameProvider;
 use crate::input::Device;
 use eframe::egui;
+use std::collections::HashMap;
 
 const STICK_PNG: &[u8] = include_bytes!("../assets/mhg_stick.png");
 const BASE_PNG: &[u8] = include_bytes!("../assets/ab6_base.png");
@@ -41,31 +42,34 @@ const fn m(nx: f32, ny: f32, num: &'static str, label: &'static str, token: &'st
 // The POV hat does light up (we can read the hat octant directly).
 const MHG_MARKERS: &[Marker] = &[
     m(0.41, 0.21, "", "Red button", ""),
-    // POV hat: one label per WAY, stacked non-overlapping; each lights individually.
-    // Cardinals = look; diagonals = camera/chain-fire (see hat spokes).
-    m(0.485, 0.245, "", "Hat ↑ Look Up", "Joystick_Hat_1"),
-    m(0.475, 0.275, "", "Hat ← Look Left", "Joystick_Hat_7"),
-    m(0.525, 0.255, "", "Hat → Look Right", "Joystick_Hat_3"),
-    m(0.515, 0.295, "", "Hat ↓ Look Down", "Joystick_Hat_5"),
-    m(0.585, 0.205, "", "Thumb hat (5-way: 4 + push)", ""),
-    m(0.645, 0.215, "", "Green button", ""),
-    m(0.45, 0.315, "", "Rocker switch", ""),
-    m(0.55, 0.305, "", "Thumb button", ""),
-    m(0.46, 0.43, "", "Trigger — fire", ""),
-    m(0.37, 0.47, "", "Pinky flip (DEF)", ""),
+    // POV hat: ALL 8 positions, each shows the action bound to it ("Hat ↗ · <action>")
+    // and lights individually. Cardinals usually = look; diagonals = camera/chain-fire.
+    m(0.500, 0.235, "", "Hat ↑", "Joystick_Hat_1"),
+    m(0.535, 0.245, "", "Hat ↗", "Joystick_Hat_2"),
+    m(0.555, 0.270, "", "Hat →", "Joystick_Hat_3"),
+    m(0.535, 0.295, "", "Hat ↘", "Joystick_Hat_4"),
+    m(0.500, 0.305, "", "Hat ↓", "Joystick_Hat_5"),
+    m(0.465, 0.295, "", "Hat ↙", "Joystick_Hat_6"),
+    m(0.445, 0.270, "", "Hat ←", "Joystick_Hat_7"),
+    m(0.465, 0.245, "", "Hat ↖", "Joystick_Hat_8"),
+    m(0.645, 0.215, "", "Thumb hat (5-way)", ""),
+    m(0.45, 0.345, "", "Rocker switch", ""),
+    m(0.55, 0.335, "", "Thumb button", ""),
+    m(0.46, 0.45, "", "Trigger — fire", ""),
+    m(0.37, 0.49, "", "Pinky flip (DEF)", ""),
 ];
 
 // AB6 gimbal -> the two aim axes. Numbers = the Joystick_Axis index (= the token).
 const BASE_MARKERS: &[Marker] = &[
-    m(0.46, 0.30, "1", "Aim Up / Down  (pitch)", "Joystick_Axis1"),
-    m(0.55, 0.40, "2", "Aim Left / Right  (yaw)", "Joystick_Axis2"),
+    m(0.46, 0.30, "1", "Pitch ↕", "Joystick_Axis1"),
+    m(0.55, 0.40, "2", "Roll ↔", "Joystick_Axis2"),
     m(0.50, 0.72, "", "FFB gimbal — \"Joystick\"", ""),
 ];
 
 // MRP pedals -> Throttle axes. Number = the Throttle_Axis index (= the token).
 const PEDAL_MARKERS: &[Marker] = &[
-    m(0.50, 0.74, "1", "Turn Left / Right  (rudder slide)", "Throttle_Axis1"),
-    m(0.30, 0.40, "2", "Throttle — press toe to go forward", "Throttle_Axis2"),
+    m(0.50, 0.74, "1", "Rudder slide", "Throttle_Axis1"),
+    m(0.30, 0.40, "2", "Right toe", "Throttle_Axis2"),
 ];
 
 pub struct Textures {
@@ -122,7 +126,7 @@ fn axis_deflected(devices: &[Device], token: &str) -> bool {
 
 /// Draw numbered, non-overlapping callouts; a callout turns green when its token
 /// is live. Labels stack in the margin nearest each dot, ordered by height.
-fn draw_callouts(painter: &egui::Painter, img: egui::Rect, markers: &[Marker], hot: &[String]) {
+fn draw_callouts(painter: &egui::Painter, img: egui::Rect, markers: &[Marker], hot: &[String], bound: &HashMap<String, String>) {
     let font = egui::FontId::proportional(11.0);
     let numfont = egui::FontId::proportional(10.0);
 
@@ -139,7 +143,17 @@ fn draw_callouts(painter: &egui::Painter, img: egui::Rect, markers: &[Marker], h
             let dot = img.min + egui::vec2(mk.nx * img.width(), mk.ny * img.height());
 
             let ry = img.top() + img.height() * (i as f32 + 1.0) / (n as f32 + 1.0);
-            let galley = painter.layout_no_wrap(mk.label.to_string(), font.clone(), egui::Color32::WHITE);
+            // Show WHAT is bound: "<control> · <action>", or "(unbound)" for a
+            // bindable control with nothing on it. Reference-only dots (no token)
+            // just show their physical name.
+            let text = if mk.token.is_empty() {
+                mk.label.to_string()
+            } else if let Some(action) = bound.get(mk.token) {
+                format!("{} · {}", mk.label, action)
+            } else {
+                format!("{} · (unbound)", mk.label)
+            };
+            let galley = painter.layout_no_wrap(text, font.clone(), egui::Color32::WHITE);
             let pad = egui::vec2(6.0, 3.0);
             let box_size = galley.size() + pad * 2.0;
             let box_min = if on_left {
@@ -230,9 +244,11 @@ pub fn hot_tokens(devices: &[Device], p: &dyn GameProvider) -> Vec<String> {
 const MHG_HATS: &[(f32, f32, u8)] = &[(0.50, 0.27, 8), (0.585, 0.205, 5)];
 
 /// Draw a captioned image at width `w` with optional callouts laid over it.
+#[allow(clippy::too_many_arguments)]
 fn image_block(
     ui: &mut egui::Ui, caption: &str, tex: &egui::TextureHandle, w: f32,
     markers: &[Marker], hats: &[(f32, f32, u8)], hot: &[String], octant: Option<u32>, show: bool,
+    bound: &HashMap<String, String>,
 ) {
     ui.add_space(8.0);
     ui.strong(caption);
@@ -242,12 +258,13 @@ fn image_block(
     painter.image(tex.id(), rect, egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)), egui::Color32::WHITE);
     if show {
         draw_hats(&painter, rect, hats, octant);
-        draw_callouts(&painter, rect, markers, hot);
+        draw_callouts(&painter, rect, markers, hot, bound);
     }
 }
 
-/// Render the device reference panel: live readout, button board, numbered images.
-pub fn sidebar(ui: &mut egui::Ui, tex: &Textures, devices: &[Device], p: &dyn GameProvider, show_labels: &mut bool) {
+/// Render the device reference panel: live readout + numbered images whose callouts
+/// show what ACTION is bound to each control (`bound`: token -> action label).
+pub fn sidebar(ui: &mut egui::Ui, tex: &Textures, devices: &[Device], p: &dyn GameProvider, show_labels: &mut bool, bound: &HashMap<String, String>) {
     // Build the live "hot" token set: pressed buttons, POV octant, deflected axes.
     let hot = hot_tokens(devices, p);
     let mut readout = hot.clone();
@@ -275,8 +292,8 @@ pub fn sidebar(ui: &mut egui::Ui, tex: &Textures, devices: &[Device], p: &dyn Ga
 
     let oct = ab6_octant(devices);
     egui::ScrollArea::vertical().show(ui, |ui| {
-        image_block(ui, "MHG Flight Stick", &tex.stick, 360.0, MHG_MARKERS, MHG_HATS, &hot, oct, *show_labels);
-        image_block(ui, "AB6 FFB Base", &tex.base, 320.0, BASE_MARKERS, &[], &hot, None, *show_labels);
-        image_block(ui, "MRP Rudder Pedals", &tex.pedals, 360.0, PEDAL_MARKERS, &[], &hot, None, *show_labels);
+        image_block(ui, "MHG Flight Stick", &tex.stick, 360.0, MHG_MARKERS, MHG_HATS, &hot, oct, *show_labels, bound);
+        image_block(ui, "AB6 FFB Base", &tex.base, 320.0, BASE_MARKERS, &[], &hot, None, *show_labels, bound);
+        image_block(ui, "MRP Rudder Pedals", &tex.pedals, 360.0, PEDAL_MARKERS, &[], &hot, None, *show_labels, bound);
     });
 }
