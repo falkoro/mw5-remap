@@ -3,6 +3,50 @@
 use crate::games::{self, GameProvider};
 use crate::{diagram, input};
 
+/// Live input monitor: polls winmm for ~25s and prints whenever a button, the POV
+/// hat, or an axis changes — so we can see exactly how a control (e.g. the MHG hat)
+/// shows up (button vs POV vs analog axis). Run it, then wiggle the control.
+pub fn monitor() {
+    use std::time::{Duration, SystemTime};
+    println!("== input monitor: move your controls now (25s) ==");
+    println!("(axis array = [X Y Z R U V], 0..65535, centre ~32767; pov in centi-deg, 65535=centred)\n");
+    // remember last-printed state per device id to only log changes
+    let mut last: std::collections::HashMap<u32, (u32, u32, [u32; 6])> = std::collections::HashMap::new();
+    let start = SystemTime::now();
+    let axis_names = ["X", "Y", "Z", "R", "U", "V"];
+    while start.elapsed().map(|d| d.as_secs()).unwrap_or(99) < 25 {
+        for d in input::poll() {
+            let prev = last.get(&d.id).copied();
+            let mut msgs: Vec<String> = Vec::new();
+            // buttons
+            let pressed = d.buttons;
+            if prev.map(|p| p.0) != Some(pressed) {
+                let list: Vec<u32> = d.pressed_buttons();
+                msgs.push(format!("buttons={list:?}"));
+            }
+            // pov
+            if prev.map(|p| p.1) != Some(d.pov) {
+                let oct = d.pov_octant().map(|o| o.to_string()).unwrap_or_else(|| "-".into());
+                msgs.push(format!("POV={} (octant {})", d.pov, oct));
+            }
+            // axes that moved > ~5% from their previous reading
+            if let Some(p) = prev {
+                for i in 0..6 {
+                    if (d.axes[i] as i64 - p.2[i] as i64).abs() > 3000 {
+                        msgs.push(format!("axis {}={}", axis_names[i], d.axes[i]));
+                    }
+                }
+            }
+            if !msgs.is_empty() {
+                println!("[{} {:04X}:{:04X}] {}", d.name, d.vid, d.pid, msgs.join("  "));
+            }
+            last.insert(d.id, (pressed, d.pov, d.axes));
+        }
+        std::thread::sleep(Duration::from_millis(60));
+    }
+    println!("\n== monitor done ==");
+}
+
 /// Fill every UNBOUND action with the known-good default layout, then save.
 /// Non-destructive: anything already bound (e.g. your fire groups) is left alone.
 pub fn apply_defaults() {

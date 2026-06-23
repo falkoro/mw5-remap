@@ -94,18 +94,18 @@ fn out_axis_token(role: Role, sem: crate::devices::Sem) -> Option<&'static str> 
 /// throttle (`Throttle_Axis2`) is a single ABSOLUTE BIPOLAR axis (centre = stop,
 /// up = forward, below centre = reverse), so we drive it from BOTH toes with two
 /// AXIS lines onto the same OutAxis: right toe forward (Invert=FALSE, Offset=-1.0)
-/// and left toe reverse (Invert=TRUE, Offset=+1.0). The toe brakes have no HOTAS_*
-/// name (they're rX/rY) so they're addressed as GenericUSBController_AxisN; the
-/// ordinals (4/5/6 for rX/rY/rZ) can vary per device — verify in-game and swap if
-/// forward/reverse are flipped. Pattern is the proven community "gas + brake" setup.
+/// and left toe reverse (Invert=TRUE, Offset=+1.0). Confirmed live via --monitor on
+/// this MRP: the two toe brakes are winmm axis X and Y (DirectInput Axis1/Axis2),
+/// the rudder swing-arm is axis R (HOTAS_RZAxis). If forward/reverse come out swapped
+/// just flip which toe is Axis1 vs Axis2. Pattern is the community "gas + brake" setup.
 fn mrp_pedal_block() -> String {
     let mut s = String::from("START_BIND\r\nNAME: MOZA MRP Rudder Pedals\r\nVID: 0x346E\r\nPID: 0x1200\r\n");
-    // rudder swing-arm (rZ, centred) -> leg turn
+    // rudder swing-arm (axis R = Rz, centred) -> leg turn
     s.push_str("AXIS: InAxis=HOTAS_RZAxis, OutAxis=Throttle_Axis1, Invert=FALSE, Offset=-0.5, DeadZoneMin=-0.05, DeadZoneMax=0.05, MapToDeadZone=TRUE\r\n");
-    // right toe (rX = Axis4) -> forward half of the bipolar throttle
-    s.push_str("AXIS: InAxis=GenericUSBController_Axis4, OutAxis=Throttle_Axis2, Invert=FALSE, Offset=-1.0, DeadZoneMin=-0.1, DeadZoneMax=0.1, MapToDeadZone=FALSE\r\n");
-    // left toe (rY = Axis5) -> reverse half of the same throttle
-    s.push_str("AXIS: InAxis=GenericUSBController_Axis5, OutAxis=Throttle_Axis2, Invert=TRUE, Offset=1.0, DeadZoneMin=-0.1, DeadZoneMax=0.1, MapToDeadZone=FALSE\r\n");
+    // right toe (axis X = Axis1) -> forward half of the bipolar throttle
+    s.push_str("AXIS: InAxis=GenericUSBController_Axis1, OutAxis=Throttle_Axis2, Invert=FALSE, Offset=-1.0, DeadZoneMin=-0.1, DeadZoneMax=0.1, MapToDeadZone=FALSE\r\n");
+    // left toe (axis Y = Axis2) -> reverse half of the same throttle
+    s.push_str("AXIS: InAxis=GenericUSBController_Axis2, OutAxis=Throttle_Axis2, Invert=TRUE, Offset=1.0, DeadZoneMin=-0.1, DeadZoneMax=0.1, MapToDeadZone=FALSE\r\n");
     s
 }
 

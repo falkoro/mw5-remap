@@ -24,6 +24,10 @@ fn main() -> eframe::Result<()> {
         cli::dump_devices();
         return Ok(());
     }
+    if std::env::args().any(|a| a == "--monitor") {
+        cli::monitor();
+        return Ok(());
+    }
     if std::env::args().any(|a| a == "--apply-defaults") {
         cli::apply_defaults();
         return Ok(());
