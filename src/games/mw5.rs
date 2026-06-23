@@ -67,7 +67,10 @@ fn catalog() -> Vec<Action> {
         // diagonals (Hat_2/4/8). ToggleView switches 1st-person cockpit <-> 3rd-person.
         a("ToggleView", "1st / 3rd Person View", "Camera", Button),
         a("ToggleFreeLook", "Free Look (hold)", "Camera", Button),
+        a("ToggleFreeCamera", "Free Camera", "Camera", Button),
         a("CycleZoom", "Cycle Zoom", "Camera", Button),
+        a("IncreaseZoom", "Zoom In", "Camera", Button),
+        a("DecreaseZoom", "Zoom Out", "Camera", Button),
         // Essentials found in the audit (were missing). ChainFire gets the last free
         // hat diagonal; the rest are catalogued for binding (keyboard keeps working).
         a("ToggleChainFire", "Chain Fire", "Weapons", Button),
@@ -75,6 +78,31 @@ fn catalog() -> Vec<Action> {
         a("TargetNearestHostile", "Target Nearest Hostile", "Targeting", Button),
         a("DispatchLance", "Lance: Attack My Target", "Command", Button),
         a("CancelOrders", "Lance: Cancel Orders", "Command", Button),
+        a("MoveAtFormationSpeed", "Lance: Move at Formation Speed", "Command", Button),
+        a("DispatchLanceMate1", "Lance: Order Mate 1", "Command", Button),
+        a("DispatchLanceMate2", "Lance: Order Mate 2", "Command", Button),
+        a("DispatchLanceMate3", "Lance: Order Mate 3", "Command", Button),
+        a("DispatchLanceMate4", "Lance: Order Mate 4", "Command", Button),
+        // Throttle/movement (discrete) — MW5's forward/back is the single bipolar
+        // JoystickThrottle axis; these are the keyboard-style step controls + stop.
+        a("ThrottleIncrease", "Throttle Up (W)", "Movement", Button),
+        a("ThrottleDecrease", "Throttle Down / Reverse (S)", "Movement", Button),
+        a("Stop", "Full Stop", "Movement", Button),
+        a("ToggleThrottleDecay", "Toggle Throttle Decay", "Movement", Button),
+        a("ActivateMASC", "MASC / Speed Boost (hold)", "Movement", Button),
+        a("ToggleMASC", "Toggle MASC", "Movement", Button),
+        a("ToggleJumpJets", "Toggle Jump Jets", "Movement", Button),
+        // More targeting
+        a("TargetPrevHostile", "Target Previous Hostile", "Targeting", Button),
+        a("TargetNearestFriendlyToCrosshair", "Target Friendly Under Crosshair", "Targeting", Button),
+        a("TargetNextFriendly", "Target Next Friendly", "Targeting", Button),
+        a("TargetPrevFriendly", "Target Previous Friendly", "Targeting", Button),
+        // More systems
+        a("ToggleHUD", "Toggle HUD", "Systems", Button),
+        a("ToggleObjectivePanel", "Objectives Panel", "Systems", Button),
+        a("CycleECMMode", "Cycle ECM Mode", "Systems", Button),
+        a("PermanentToggleArmLock", "Arm Lock (toggle)", "Systems", Button),
+        a("TemporaryToggleArmLock", "Arm Lock (hold)", "Systems", Button),
         a("EjectPilot", "Eject", "Systems", Button),
     ]
 }

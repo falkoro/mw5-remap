@@ -233,10 +233,16 @@ fn binding_row(
     } else {
         (pretty_token(&token), device_color(&token))
     };
-    let txt_col = if token.is_empty() && !capturing { egui::Color32::from_rgb(180, 188, 205) } else { egui::Color32::BLACK };
-    let chip = egui::Button::new(egui::RichText::new(text).color(txt_col).strong())
+    let txt_col = if token.is_empty() && !capturing { egui::Color32::from_rgb(120, 128, 145) } else { egui::Color32::from_rgb(15, 18, 24) };
+    // a rounded, slightly raised "chip" — nicer than a flat box
+    let stroke = if live { egui::Stroke::new(2.0, egui::Color32::from_rgb(30, 120, 60)) }
+                 else if token.is_empty() { egui::Stroke::new(1.0, egui::Color32::from_rgb(150, 158, 175)) }
+                 else { egui::Stroke::new(1.0, fill.linear_multiply(0.6)) };
+    let chip = egui::Button::new(egui::RichText::new(text).color(txt_col).strong().size(14.0))
         .fill(fill)
-        .min_size(egui::vec2(150.0, 28.0));
+        .stroke(stroke)
+        .rounding(egui::Rounding::same(8.0))
+        .min_size(egui::vec2(158.0, 30.0));
     if ui.add(chip).on_hover_text("Click, then press the control / move the axis. Esc cancels.").clicked() {
         if capturing {
             *capture = None;
