@@ -284,12 +284,16 @@ impl GameProvider for Mw5 {
             b("JoystickLookVertical@Joystick_Hat_5", "Joystick_Hat_5", -2.0),  // down
             b("JoystickLookHorizontal@Joystick_Hat_3", "Joystick_Hat_3", 3.0), // right
             b("JoystickLookHorizontal@Joystick_Hat_7", "Joystick_Hat_7", -3.0),// left
-            // MRP rudder pedals (Throttle role) -> turn the mech's legs. The rudder is
-            // the one reliable, self-centering pedal axis (winmm dwRpos -> HOTAS_RZAxis
-            // -> Throttle_Axis1). Throttle/gas stays on keyboard W/S (never touched);
-            // mechs don't strafe, so the strafe axes are left unbound. "" = unbind.
+            // MOZA MRP pedals (Throttle role): RIGHT toe = move forward (the throttle
+            // axis), rudder swing-arm = turn the legs. The right toe rests at 0 and
+            // presses to max -> JoystickThrottle goes 0..forward (offset 0 in .Remap).
+            // REVERSE on the left toe: two separate toe axes can't merge into one MW5
+            // throttle here — combine them into a single split axis in MOZA Pit House
+            // (center=stop, right=fwd, left=rev) and it maps straight onto Throttle_Axis2,
+            // OR put reverse on a button. Use Bind + the live panel to confirm which
+            // physical axis is the right toe before trusting these. "" = unbind.
             b("JoystickLegRotation", "Throttle_Axis1", 1.0),   // rudder slide -> turn L/R
-            b("JoystickThrottle", "Throttle_Axis2", 1.0),      // press a toe pedal -> forward
+            b("JoystickThrottle", "Throttle_Axis2", 1.0),      // RIGHT toe press -> forward
             b("JoystickStrafeRight", "", 1.0),
             // --- weapons: all on the AB6 (Joystick) buttons/hat ---
             b("FireWeaponGroup1", "Joystick_Button1", 1.0),

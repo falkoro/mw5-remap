@@ -47,7 +47,7 @@ const MHG_MARKERS: &[Marker] = &[
     m(0.475, 0.275, "", "Hat ← Look Left", "Joystick_Hat_7"),
     m(0.525, 0.255, "", "Hat → Look Right", "Joystick_Hat_3"),
     m(0.515, 0.295, "", "Hat ↓ Look Down", "Joystick_Hat_5"),
-    m(0.585, 0.205, "", "Thumb hat (4-way)", ""),
+    m(0.585, 0.205, "", "Thumb hat (5-way: 4 + push)", ""),
     m(0.645, 0.215, "", "Green button", ""),
     m(0.45, 0.315, "", "Rocker switch", ""),
     m(0.55, 0.305, "", "Thumb button", ""),
@@ -206,7 +206,28 @@ fn ab6_octant(devices: &[Device]) -> Option<u32> {
     devices.iter().find(|d| (d.vid, d.pid) == AB6).and_then(|d| d.pov_octant())
 }
 
-const MHG_HATS: &[(f32, f32, u8)] = &[(0.50, 0.27, 8), (0.585, 0.205, 4)];
+/// The live set of tokens currently active: pressed buttons, the POV octant, and
+/// deflected/pressed axes. Shared by the device panel AND the Cockpit Bindings
+/// list so a binding row lights up the instant you touch its control.
+pub fn hot_tokens(devices: &[Device], p: &dyn GameProvider) -> Vec<String> {
+    let mut hot: Vec<String> = Vec::new();
+    for (i, d) in devices.iter().enumerate() {
+        for b in d.pressed_buttons() {
+            if let Some(t) = p.button_token(d, b, i) { hot.push(t); }
+        }
+        if let Some(o) = d.pov_octant() {
+            if let Some(t) = p.pov_token(d, o, i) { hot.push(t); }
+        }
+    }
+    for tok in ["Joystick_Axis1", "Joystick_Axis2", "Throttle_Axis1", "Throttle_Axis2"] {
+        if axis_deflected(devices, tok) { hot.push(tok.to_string()); }
+    }
+    hot
+}
+
+// Main POV hat = 8-way (confirmed: MW5 Joystick_Hat_1..8, MOZA hat configurable
+// 8/4-way in MOZA Cockpit). Thumb control = a 5-way switch (4 dirs + center push).
+const MHG_HATS: &[(f32, f32, u8)] = &[(0.50, 0.27, 8), (0.585, 0.205, 5)];
 
 /// Draw a captioned image at width `w` with optional callouts laid over it.
 fn image_block(
@@ -225,53 +246,10 @@ fn image_block(
     }
 }
 
-/// A 1..20 grid of button cells that light up green as you press AB6 buttons —
-/// doubles as the "which physical button is number N?" discovery tool.
-fn button_board(ui: &mut egui::Ui, devices: &[Device], p: &dyn GameProvider) {
-    let mut down = std::collections::HashSet::new();
-    for (i, d) in devices.iter().enumerate() {
-        for b in d.pressed_buttons() {
-            if let Some(t) = p.button_token(d, b, i) {
-                if let Some(n) = t.strip_prefix("Joystick_Button").and_then(|s| s.parse::<u32>().ok()) {
-                    down.insert(n);
-                }
-            }
-        }
-    }
-    ui.add_space(2.0);
-    ui.label(egui::RichText::new("Stick buttons (press one to find its number)").weak());
-    let cell = egui::vec2(26.0, 20.0);
-    for row in 0..2 {
-        ui.horizontal(|ui| {
-            for col in 0..10 {
-                let n = row * 10 + col + 1;
-                let (rect, _) = ui.allocate_exact_size(cell, egui::Sense::hover());
-                let on = down.contains(&n);
-                let bg = if on { HOT } else { egui::Color32::from_rgb(28, 34, 50) };
-                let fg = if on { egui::Color32::BLACK } else { egui::Color32::from_rgb(150, 165, 190) };
-                ui.painter().rect_filled(rect, 4.0, bg);
-                ui.painter().rect_stroke(rect, 4.0, egui::Stroke::new(1.0, egui::Color32::from_rgb(50, 62, 88)));
-                ui.painter().text(rect.center(), egui::Align2::CENTER_CENTER, n.to_string(), egui::FontId::proportional(11.0), fg);
-            }
-        });
-    }
-}
-
 /// Render the device reference panel: live readout, button board, numbered images.
 pub fn sidebar(ui: &mut egui::Ui, tex: &Textures, devices: &[Device], p: &dyn GameProvider, show_labels: &mut bool) {
     // Build the live "hot" token set: pressed buttons, POV octant, deflected axes.
-    let mut hot: Vec<String> = Vec::new();
-    for (i, d) in devices.iter().enumerate() {
-        for b in d.pressed_buttons() {
-            if let Some(t) = p.button_token(d, b, i) { hot.push(t); }
-        }
-        if let Some(o) = d.pov_octant() {
-            if let Some(t) = p.pov_token(d, o, i) { hot.push(t); }
-        }
-    }
-    for tok in ["Joystick_Axis1", "Joystick_Axis2", "Throttle_Axis1", "Throttle_Axis2"] {
-        if axis_deflected(devices, tok) { hot.push(tok.to_string()); }
-    }
+    let hot = hot_tokens(devices, p);
     let mut readout = hot.clone();
     readout.sort();
     readout.dedup();
@@ -293,7 +271,6 @@ pub fn sidebar(ui: &mut egui::Ui, tex: &Textures, devices: &[Device], p: &dyn Ga
             }
         });
     }
-    button_board(ui, devices, p);
     ui.separator();
 
     let oct = ab6_octant(devices);

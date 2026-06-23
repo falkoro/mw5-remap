@@ -152,6 +152,73 @@ fn persist(path: &PathBuf, paths: &[String]) {
     let _ = std::fs::write(path, paths.join("\r\n"));
 }
 
+const CAPTURING: egui::Color32 = egui::Color32::from_rgb(230, 170, 40); // orange: listening
+const LIVE: egui::Color32 = egui::Color32::from_rgb(70, 210, 110);      // green: control active
+
+/// One row of the Cockpit Bindings grid: action label, editable token, Bind
+/// button, and (for axes) invert/scale. The label + token glow green the instant
+/// the bound control is physically active, so you can see what you just touched.
+#[allow(clippy::too_many_arguments)]
+fn binding_row(
+    ui: &mut egui::Ui,
+    i: usize,
+    actions: &[Action],
+    rows: &mut [Binding],
+    capture: &mut Option<Capture>,
+    devices: &[input::Device],
+    p: &dyn GameProvider,
+    status: &mut String,
+    hot: &[String],
+) {
+    let capturing = capture.as_ref().map(|c| c.row == i).unwrap_or(false);
+    let live = !rows[i].token.is_empty() && hot.iter().any(|h| h == &rows[i].token);
+
+    if capturing {
+        ui.colored_label(CAPTURING, format!("● {}", actions[i].label));
+    } else if live {
+        ui.colored_label(LIVE, format!("🟢 {}", actions[i].label));
+    } else {
+        ui.label(&actions[i].label);
+    }
+
+    let mut edit = egui::TextEdit::singleline(&mut rows[i].token).hint_text("unbound").desired_width(118.0);
+    if live { edit = edit.text_color(LIVE); }
+    ui.add(edit);
+
+    let btn_label = if capturing { "press…" } else { "Bind" };
+    if ui.button(btn_label).clicked() {
+        if capturing {
+            *capture = None;
+        } else {
+            let mut ignore = HashSet::new();
+            for (di, dev) in devices.iter().enumerate() {
+                for b in dev.pressed_buttons() { if let Some(t) = p.button_token(dev, b, di) { ignore.insert(t); } }
+                if let Some(o) = dev.pov_octant() { if let Some(t) = p.pov_token(dev, o, di) { ignore.insert(t); } }
+            }
+            let baseline = devices.iter().map(|d| (d.id, d.axes)).collect();
+            *capture = Some(Capture { row: i, kind: actions[i].kind, ignore, baseline });
+            *status = format!("Listening… do the control for \"{}\" (Esc to cancel)", actions[i].label);
+        }
+    }
+
+    if actions[i].kind == Kind::Axis {
+        ui.horizontal(|ui| {
+            let mut inv = rows[i].scale < 0.0;
+            if ui.checkbox(&mut inv, "Inv").changed() {
+                rows[i].scale = rows[i].scale.abs() * if inv { -1.0 } else { 1.0 };
+            }
+            let mut mag = rows[i].scale.abs();
+            if ui.add(egui::DragValue::new(&mut mag).speed(0.1).range(0.1..=10.0).prefix("x")).changed() {
+                let sign = if rows[i].scale < 0.0 { -1.0 } else { 1.0 };
+                rows[i].scale = mag * sign;
+            }
+        });
+    } else {
+        ui.label("");
+    }
+    ui.end_row();
+}
+
 impl eframe::App for App {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.devices = input::poll();
@@ -324,7 +391,7 @@ impl eframe::App for App {
             ui.add_space(2.0);
         });
 
-        egui::SidePanel::left("devices").resizable(true).default_width(420.0).show(ctx, |ui| {
+        egui::SidePanel::left("devices").resizable(true).default_width(370.0).show(ctx, |ui| {
             if let Some(tex) = textures.as_ref() {
                 crate::visual::sidebar(ui, tex, devices, games[*selected].as_ref(), show_labels);
             } else {
@@ -337,53 +404,49 @@ impl eframe::App for App {
                 ui.centered_and_justified(|ui| { ui.label("This game isn't supported yet — pick MechWarrior 5."); });
                 return;
             }
-            ui.add_space(4.0);
-            ui.label("Click Bind, then physically move the axis or press the button. Esc cancels. You can also type a token directly.");
-            ui.add_space(4.0);
-            egui::ScrollArea::vertical().show(ui, |ui| {
-                for (cat, idxs) in &groups {
-                    ui.add_space(6.0);
-                    ui.strong(cat);
-                    egui::Grid::new(format!("grid_{cat}")).num_columns(4).spacing([12.0, 6.0]).striped(true).show(ui, |ui| {
-                        for &i in idxs {
-                            let capturing = capture.as_ref().map(|c| c.row == i).unwrap_or(false);
-                            if capturing { ui.colored_label(egui::Color32::from_rgb(230, 170, 40), format!("● {}", actions[i].label)); }
-                            else { ui.label(&actions[i].label); }
+            let p = games[*selected].as_ref();
+            // Live set of tokens being pressed/moved right now — drives the green glow.
+            let hot = crate::visual::hot_tokens(devices, p);
 
-                            ui.add_sized([250.0, 22.0], egui::TextEdit::singleline(&mut rows[i].token).hint_text("unbound"));
+            ui.add_space(2.0);
+            ui.horizontal(|ui| {
+                ui.heading("🎮 Cockpit Bindings");
+                ui.label(egui::RichText::new(
+                    "— click Bind, then move the axis / press the button (Esc cancels). A bound control glows green when you use it (see also \"Active now\" in the left panel).",
+                ).weak());
+            });
+            ui.separator();
 
-                            let btn_label = if capturing { "press…" } else { "Bind" };
-                            if ui.button(btn_label).clicked() {
-                                if capturing { *capture = None; }
-                                else {
-                                    let p = games[*selected].as_ref();
-                                    let mut ignore = HashSet::new();
-                                    for (di, dev) in devices.iter().enumerate() {
-                                        for b in dev.pressed_buttons() { if let Some(t) = p.button_token(dev, b, di) { ignore.insert(t); } }
-                                        if let Some(o) = dev.pov_octant() { if let Some(t) = p.pov_token(dev, o, di) { ignore.insert(t); } }
-                                    }
-                                    let baseline = devices.iter().map(|d| (d.id, d.axes)).collect();
-                                    *capture = Some(Capture { row: i, kind: actions[i].kind, ignore, baseline });
-                                    *status = format!("Listening… do the control for \"{}\" (Esc to cancel)", actions[i].label);
+            // Spread the categories across N balanced columns (by row count) so the
+            // whole control map fits with far less scrolling. One column row needs
+            // ~470px; pick the column count that fits the current central width.
+            let avail_w = ui.available_width();
+            let ncols = ((avail_w / 500.0).floor() as usize).clamp(1, 3);
+            let col_w = avail_w / ncols as f32 - 16.0; // minus scrollbar/gutter
+            let mut col_groups: Vec<Vec<&(String, Vec<usize>)>> = vec![Vec::new(); ncols];
+            let mut heights = vec![0usize; ncols];
+            for g in &groups {
+                let c = (0..ncols).min_by_key(|&c| heights[c]).unwrap_or(0);
+                col_groups[c].push(g);
+                heights[c] += g.1.len() + 2; // +heading overhead
+            }
+
+            // Columns at the bounded central-panel level (so each gets an equal,
+            // on-screen half), each with its own vertical scroll. Wrapping ui.columns
+            // *inside* one ScrollArea breaks: the scroll area's inner ui is
+            // horizontally unbounded, so the split lands the 2nd column off-screen.
+            ui.columns(ncols, |cols| {
+                for (ci, (col, groups_in_col)) in cols.iter_mut().zip(&col_groups).enumerate() {
+                    egui::ScrollArea::vertical().id_salt(("bindcol", ci)).show(col, |ui| {
+                        ui.set_max_width(col_w); // the scroll area is unbounded wide; clamp the grid
+                        for (cat, idxs) in groups_in_col {
+                            ui.add_space(3.0);
+                            ui.strong(cat);
+                            egui::Grid::new(format!("grid_{cat}")).num_columns(4).spacing([8.0, 3.0]).striped(true).show(ui, |ui| {
+                                for &i in idxs.iter() {
+                                    binding_row(ui, i, actions, rows, capture, devices, p, status, &hot);
                                 }
-                            }
-
-                            if actions[i].kind == Kind::Axis {
-                                ui.horizontal(|ui| {
-                                    let mut inv = rows[i].scale < 0.0;
-                                    if ui.checkbox(&mut inv, "Invert").changed() {
-                                        rows[i].scale = rows[i].scale.abs() * if inv { -1.0 } else { 1.0 };
-                                    }
-                                    let mut mag = rows[i].scale.abs();
-                                    if ui.add(egui::DragValue::new(&mut mag).speed(0.1).range(0.1..=10.0).prefix("x")).changed() {
-                                        let sign = if rows[i].scale < 0.0 { -1.0 } else { 1.0 };
-                                        rows[i].scale = mag * sign;
-                                    }
-                                });
-                            } else {
-                                ui.label("");
-                            }
-                            ui.end_row();
+                            });
                         }
                     });
                 }

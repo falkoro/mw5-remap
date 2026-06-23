@@ -37,7 +37,12 @@ use Sem::*;
 
 // AB6 gimbal: Y=pitch, X=roll. 32 buttons (only 1..20 usable as MW5 tokens), POV hat.
 const AB6_AXES: &[AxisMap] = &[ax(Pitch, "HOTAS_YAxis", "Y", true), ax(Roll, "HOTAS_XAxis", "X", false)];
-// MRP pedals: rudder slide (Rz) = yaw/turn; a toe (Y) = throttle/forward.
+// MOZA MRP pedals expose THREE independent axes: a centered rudder swing-arm (Rz)
+// and two separate toe brakes (left + right). MW5 has only one throttle OutAxis, so
+// we map: rudder slide (Rz) = yaw/leg-turn, and the RIGHT toe (Y) = throttle/forward.
+// Reverse on the left toe needs the two toes COMBINED into one split axis in MOZA
+// Pit House (center=stop, right=fwd, left=rev) — DirectInput can't merge them here.
+// PID/axis-letters are model-specific: confirm live with `--devices` + the panel.
 const MRP_AXES: &[AxisMap] = &[ax(Yaw, "HOTAS_RZAxis", "Rz", false), ax(Throttle, "HOTAS_YAxis", "Y", false)];
 // Warthog stick: X=roll, Y=pitch, POV hat, 19 buttons.
 const WH_STICK_AXES: &[AxisMap] = &[ax(Pitch, "HOTAS_YAxis", "Y", true), ax(Roll, "HOTAS_XAxis", "X", false)];
