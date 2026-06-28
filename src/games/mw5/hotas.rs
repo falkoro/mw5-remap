@@ -137,14 +137,16 @@ fn device_block(d: &crate::devices::KnownDevice) -> String {
             ));
         }
     }
-    // MHG analog thumb hat / POV (Hall-effect): confirmed live to be winmm axes U
-    // and V — two extra CENTRED proportional axes for smooth look. winmm U/V are
-    // DirectInput SLIDER axes, so MW5 names them HOTAS_Slider1/HOTAS_Slider2 (NOT
-    // HOTAS_UAxis/VAxis, which aren't valid InAxis names — that's why look did
-    // nothing before). Routed to spare Joystick axis slots so they bind to look.
+    // MHG analog thumb hat / POV: Windows Game Controllers shows it as X-Rotation /
+    // Y-Rotation (Rx/Ry); winmm surfaces them as U/V. MW5 does NOT recognise RX/RY by
+    // name (confirmed: "MechWarrior 5 does not recognize RX and RY mappings"), and
+    // they're not sliders either — so HOTAS_RXAxis/HOTAS_Slider1 do nothing. The
+    // working route is the raw HID index GenericUSBController_AxisN: on the AB6 the
+    // axis order is X,Y,Z,Rx,Ry,Rz, so Rx=Axis4, Ry=Axis5. BEST-GUESS ordinal —
+    // verify in-game; if look doesn't move, try Axis5/Axis6.
     if (d.vid, d.pid) == (0x346E, 0x1002) {
-        s.push_str("AXIS: InAxis=HOTAS_Slider1, OutAxis=Joystick_Axis4, Invert=FALSE, Offset=-0.5, DeadZoneMin=-0.05, DeadZoneMax=0.05, MapToDeadZone=TRUE\r\n");
-        s.push_str("AXIS: InAxis=HOTAS_Slider2, OutAxis=Joystick_Axis5, Invert=FALSE, Offset=-0.5, DeadZoneMin=-0.05, DeadZoneMax=0.05, MapToDeadZone=TRUE\r\n");
+        s.push_str("AXIS: InAxis=GenericUSBController_Axis4, OutAxis=Joystick_Axis4, Invert=FALSE, Offset=-0.5, DeadZoneMin=-0.05, DeadZoneMax=0.05, MapToDeadZone=TRUE\r\n");
+        s.push_str("AXIS: InAxis=GenericUSBController_Axis5, OutAxis=Joystick_Axis5, Invert=FALSE, Offset=-0.5, DeadZoneMin=-0.05, DeadZoneMax=0.05, MapToDeadZone=TRUE\r\n");
     }
     s
 }
