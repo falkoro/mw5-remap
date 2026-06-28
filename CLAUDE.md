@@ -92,8 +92,14 @@ DirectInput 8-axis layout `[X,Y,Z,Rx,Ry,Rz,Slider0,Slider1]`:
 
 ## Testing
 
+- **`cargo test`** — unit tests (dev profile; do NOT use `--release`, its `panic=abort` breaks tests).
+  Covers the logic that historically broke: `vjoy::combine_toes`/`scale`, `profiles` (safe_name/apply),
+  `hotas` (strip/retain blocks, `producible_tokens`, **no orphan default bindings**, MRP throttle line),
+  `parse` (split_axis_id, read_buttons picks the Joystick section, set_action), and export PDF/PNG.
+  The `no_orphan_default_bindings` test is the guard against "bound in-game but nothing feeds it".
 - `--selftest` — config round-trip on a TEMP copy (never touches the real file); prints the loaded
-  layout + `ROUND-TRIP: PASS/FAIL`. Run after any change to `data.rs`/`parse.rs`/`mod.rs`.
+  layout, `ROUND-TRIP`, and `MAPPING` (orphan check) + `OVERALL: PASS/FAIL`. Run after any change to
+  `data.rs`/`parse.rs`/`mod.rs`.
 - `--devices` — one-shot dump of every controller + all 8 axis values (note: winmm returns 32767 on a
   COLD first read; real rest values appear once polling continuously — use `--monitor` for live deltas).
 - `--monitor` — 25s live change log (the key hardware-diagnosis tool).

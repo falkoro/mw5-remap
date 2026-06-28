@@ -132,3 +132,36 @@ pub fn combine_toes(right: u32, left: u32) -> i32 {
     let delta = right as i32 - left as i32; // -65535..=65535
     VJOY_CENTRE + delta * (VJOY_CENTRE - 1) / 65535
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn combine_rest_is_centre() {
+        assert_eq!(combine_toes(0, 0), VJOY_CENTRE);
+    }
+
+    #[test]
+    fn combine_directions() {
+        assert!(combine_toes(65535, 0) > VJOY_CENTRE, "right toe should push forward");
+        assert!(combine_toes(0, 65535) < VJOY_CENTRE, "left toe should push reverse");
+        // both toes together cancel back to centre
+        assert_eq!(combine_toes(65535, 65535), VJOY_CENTRE);
+    }
+
+    #[test]
+    fn combine_stays_in_range() {
+        for (r, l) in [(0, 0), (65535, 0), (0, 65535), (65535, 65535), (12345, 54321)] {
+            let v = combine_toes(r, l).clamp(1, VJOY_MAX);
+            assert!((1..=VJOY_MAX).contains(&v));
+        }
+    }
+
+    #[test]
+    fn scale_maps_full_range() {
+        assert_eq!(scale(0), 1);
+        assert!(scale(65535) >= VJOY_MAX - 1);
+        assert!((scale(32767) - VJOY_CENTRE).abs() <= 2, "mid should be ~centre");
+    }
+}

@@ -271,3 +271,54 @@ pub fn write_hotas_mappings() -> Result<String, String> {
     std::fs::write(&path, out).map_err(|e| e.to_string())?;
     Ok(backup)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Two stale Thrustmaster-style blocks + a MOZA block, to exercise the filters.
+    const SAMPLE: &str = "START_BIND\r\nNAME: Stale TM\r\nVID: 0x044F\r\nPID: 0xB10A\r\nBUTTON: InButton=GenericUSBController_Button1, OutButtons=Joystick_Button1\r\n\r\n\r\nSTART_BIND\r\nNAME: MOZA AB6 FFB Base\r\nVID: 0x346E\r\nPID: 0x1002\r\n";
+
+    #[test]
+    fn strip_drops_only_targeted() {
+        let out = strip_device_blocks(SAMPLE, &[(0x044F, 0xB10A)]);
+        assert!(!out.contains("Stale TM"), "stale block should be dropped");
+        assert!(out.contains("MOZA AB6"), "MOZA block should remain");
+    }
+
+    #[test]
+    fn retain_keeps_only_matching() {
+        // keep only the MOZA (simulates "connected & unmanaged"); drop the stale TM.
+        let out = retain_blocks(SAMPLE, |vid, pid| (vid, pid) == (0x346E, 0x1002));
+        assert!(out.contains("MOZA AB6"));
+        assert!(!out.contains("Stale TM"));
+    }
+
+    #[test]
+    fn ab6_and_mrp_produce_the_tokens_defaults_need() {
+        let toks = producible_tokens();
+        // fire buttons + hat + look (AB6) and throttle + rudder (MRP)
+        for t in ["Joystick_Button1", "Joystick_Button20", "Joystick_Hat_1",
+                  "Joystick_Axis1", "Joystick_Axis4", "Throttle_Axis1", "Throttle_Axis2"] {
+            assert!(toks.contains(t), "no device .Remap produces {t}");
+        }
+    }
+
+    #[test]
+    fn no_orphan_default_bindings() {
+        let toks = producible_tokens();
+        let orphans: Vec<_> = super::super::data::default_bindings().into_iter()
+            .filter(|b| !b.token.is_empty() && !toks.contains(&b.token))
+            .map(|b| format!("{}->{}", b.id, b.token))
+            .collect();
+        assert!(orphans.is_empty(), "every default binding must map to a producible token, got orphans: {orphans:?}");
+    }
+
+    #[test]
+    fn mrp_throttle_is_a_single_centred_friendly_line() {
+        // the throttle toe line must target Throttle_Axis2 (what JoystickThrottle binds to)
+        let blk = mrp_pedal_block();
+        assert!(blk.contains("OutAxis=Throttle_Axis2"), "MRP must drive Throttle_Axis2");
+        assert!(blk.contains("OutAxis=Throttle_Axis1"), "MRP rudder must drive Throttle_Axis1");
+    }
+}

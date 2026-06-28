@@ -166,3 +166,45 @@ pub(super) fn set_action(body: &mut String, action: &str, key: &str) -> bool {
     body.replace_range(start..=end, &replacement);
     true
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn split_axis_id_handles_composite() {
+        assert_eq!(split_axis_id("JoystickThrottle"), ("JoystickThrottle", None));
+        assert_eq!(split_axis_id("LookV@Joystick_Hat_1"), ("LookV", Some("Joystick_Hat_1")));
+    }
+
+    #[test]
+    fn bounded_key_reads_or_none() {
+        assert_eq!(bounded_key("\",BoundedKeys=((Key=Joystick_Button5))").as_deref(), Some("Joystick_Button5"));
+        assert_eq!(bounded_key("\")"), None); // unbound tuple
+    }
+
+    /// read_buttons must read the JOYSTICK section, not the keyboard one (the bug where
+    /// a button looked bound but to the wrong section).
+    #[test]
+    fn read_buttons_picks_joystick_section() {
+        let text = "InputTypeToActionKeyMap=((Keyboard_Mouse, (ActionKeyMaps=\
+            ((ActionName=\"FireWeaponGroup1\",BoundedKeys=((Key=One)))))),\
+            (Joystick, (ActionKeyMaps=((ActionName=\"FireWeaponGroup1\",BoundedKeys=((Key=Joystick_Button1))),\
+            (ActionName=\"ToggleView\",BoundedKeys=((Key=Joystick_Button5)))))))";
+        let m = read_buttons(text);
+        assert_eq!(m.get("FireWeaponGroup1").map(String::as_str), Some("Joystick_Button1"));
+        assert_eq!(m.get("ToggleView").map(String::as_str), Some("Joystick_Button5"));
+    }
+
+    #[test]
+    fn set_action_rebinds_in_place() {
+        let mut body = "X((ActionName=\"FireWeaponGroup1\",BoundedKeys=((Key=Joystick_Button1))),(ActionName=\"Stop\"))Y".to_string();
+        assert!(set_action(&mut body, "FireWeaponGroup1", "Joystick_Button9"));
+        assert!(body.contains("(ActionName=\"FireWeaponGroup1\",BoundedKeys=((Key=Joystick_Button9)))"));
+        // unbinding ("" / None) drops the BoundedKeys
+        assert!(set_action(&mut body, "Stop", ""));
+        assert!(body.contains("(ActionName=\"Stop\")"));
+        // unknown action -> false, body untouched
+        assert!(!set_action(&mut body, "Nope", "Joystick_Button1"));
+    }
+}

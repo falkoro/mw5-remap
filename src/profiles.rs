@@ -96,3 +96,35 @@ pub fn apply(rows: &mut [Binding], from: &[Binding]) {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::games::Binding;
+    fn b(id: &str, token: &str, scale: f32) -> Binding { Binding { id: id.into(), token: token.into(), scale } }
+
+    #[test]
+    fn safe_name_sanitises() {
+        assert_eq!(safe_name("  My Profile "), "My Profile");
+        assert_eq!(safe_name("a/b\\c:d*e"), "abcde");
+        assert_eq!(safe_name("keep-this_one 2"), "keep-this_one 2");
+        assert_eq!(safe_name("   "), "");
+    }
+
+    #[test]
+    fn apply_overwrites_present_and_clears_absent() {
+        let mut rows = vec![b("a", "old", 1.0), b("b", "keep", 2.0)];
+        apply(&mut rows, &[b("a", "new", -3.0)]);
+        assert_eq!(rows[0].token, "new");
+        assert_eq!(rows[0].scale, -3.0);
+        assert_eq!(rows[1].token, ""); // not in the profile -> cleared
+        assert_eq!(rows[1].scale, 1.0);
+    }
+
+    #[test]
+    fn cannot_save_or_delete_app_defaults() {
+        assert!(save("TestGame", APP_DEFAULTS, &[]).is_err());
+        assert!(delete("TestGame", APP_DEFAULTS).is_err());
+        assert!(save("TestGame", "  ", &[]).is_err()); // empty name
+    }
+}

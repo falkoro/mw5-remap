@@ -51,6 +51,18 @@ across MW5/AC7/SC like the MOZA gear. Use the `add-joystick` skill.
   (drops stale Thrustmaster/Warthog blocks). A fresh "🎮 Fix HOTAS file" gives a clean file.
 - Consider folding "Fix HOTAS file" into 💾 Save [Task #20] once the throttle/buttons are stable.
 
+### E. Tests (v0.4.1+) — keep growing
+`cargo test` now covers the logic that historically broke (vjoy combine/scale, profiles, hotas
+strip/retain/producible-tokens/**no-orphans**, parse read_buttons/set_action, export). Add more as
+features land. The `no_orphan_default_bindings` test is the guard against dead bindings.
+
+### F. OPEN QUESTION — does MW5 even need the .Remap? [Task #24]
+User reports MW5's OWN bind UI captures joystick buttons (you can bind them) but in GAMEPLAY none
+fire — and our GameUserSettings binds also don't fire. Possible that MW5 (this Mercenaries install)
+has native joystick support that CONFLICTS with our `.Remap` tokens. Reset path applied (.Remap
+deleted + config unlocked) so the user can try native binding. If native works, the whole `.Remap`
+approach may be obsolete for this install — re-evaluate before more `.Remap` work.
+
 ### NOT done autonomously (need the user / clarification)
 - **vJoy install** — kernel driver; do it together (admin, hard to undo).
 - **"headroom / gate / ponytail (on github)"** — could not identify these; will NOT install
