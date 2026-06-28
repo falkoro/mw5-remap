@@ -124,27 +124,35 @@ fn disp_size(tex: &egui::TextureHandle, w: f32) -> egui::Vec2 {
 /// the toe-throttle (rests at 0) when pressed in. Indices match games::mw5 .Remap.
 fn axis_deflected(devices: &[Device], token: &str) -> bool {
     // The throttle (Throttle_Axis2) is driven by BOTH toe brakes — confirmed live on
-    // this MRP: right toe = winmm X(0), left toe = winmm Y(1), BOTH centred ~32767.
-    // Either toe pushed off centre = engaged (so the left toe lights it, not just X).
+    // this MRP: right toe = winmm X(0), left toe = winmm Y(1), BOTH UNIPOLAR resting
+    // at ~0 (the 32767 seen on a cold first read is a winmm artifact; once polling
+    // they sit at 0 and press up to ~64000). Engaged when either toe is pressed in.
     if token == "Throttle_Axis2" {
         return match devices.iter().find(|d| (d.vid, d.pid) == MRP) {
             Some(d) => {
-                let x = d.axes.first().copied().unwrap_or(32767) as i32;
-                let y = d.axes.get(1).copied().unwrap_or(32767) as i32;
-                (x - 32767).abs() > 9000 || (y - 32767).abs() > 9000
+                d.axes.first().copied().unwrap_or(0) > 12000
+                    || d.axes.get(1).copied().unwrap_or(0) > 12000
             }
             None => false,
         };
     }
+    // The analog hat's VERTICAL axis (winmm U -> Joystick_Axis4) is slider-like: it
+    // rests NEAR 0 (~3378), not centred (confirmed live — V is the centred one). So
+    // treat it unipolar; a resting hat would glow constantly under a centred check.
+    if token == "Joystick_Axis4" {
+        return devices.iter().find(|d| (d.vid, d.pid) == AB6)
+            .map(|d| d.axes.get(4).copied().unwrap_or(0) > 12000)
+            .unwrap_or(false);
+    }
+    // The remaining mapped axes are CENTRED ~32767 (gimbal, rudder swing-arm, and the
+    // hat's HORIZONTAL V axis); engaged when pushed past ~14% off centre.
     let (id, idx) = match token {
         "Joystick_Axis1" => (AB6, 1), // HOTAS_YAxis (gimbal pitch)
         "Joystick_Axis2" => (AB6, 0), // HOTAS_XAxis (gimbal roll)
-        "Joystick_Axis4" => (AB6, 4), // U axis (analog thumb / POV hat, vertical)
-        "Joystick_Axis5" => (AB6, 5), // V axis (analog thumb / POV hat, horizontal)
-        "Throttle_Axis1" => (MRP, 3), // HOTAS_RZAxis (rudder)
+        "Joystick_Axis5" => (AB6, 5), // V axis (POV/thumb hat horizontal)
+        "Throttle_Axis1" => (MRP, 3), // HOTAS_RZAxis (rudder, centred)
         _ => return false,
     };
-    // every remaining mapped axis is centred ~32767; engaged when pushed past ~14%.
     match devices.iter().find(|d| (d.vid, d.pid) == id) {
         Some(d) => ((d.axes.get(idx).copied().unwrap_or(32767) as i32) - 32767).abs() > 9000,
         None => false,
