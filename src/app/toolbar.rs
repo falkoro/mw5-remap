@@ -42,6 +42,20 @@ pub(super) fn top_bar(
             let avail = games[*selected].available();
             ui.separator();
             if ui.add_enabled(avail, egui::Button::new("⟳ Load current")).clicked() { reload = true; }
+            if ui.add_enabled(avail, egui::Button::new("↺ Reset to defaults"))
+                .on_hover_text("Replace the grid with the known-good default layout. Not saved until you click 💾 Save to game.")
+                .clicked()
+            {
+                let defaults: std::collections::HashMap<String, (String, f32)> = games[*selected]
+                    .default_bindings().into_iter().map(|b| (b.id, (b.token, b.scale))).collect();
+                for r in rows.iter_mut() {
+                    match defaults.get(&r.id) {
+                        Some((tok, sc)) => { r.token = tok.clone(); r.scale = *sc; }
+                        None => { r.token.clear(); r.scale = 1.0; }
+                    }
+                }
+                *status = "Reset to the default layout — review it, then click 💾 Save to game.".into();
+            }
             if ui.add_enabled(avail, egui::Button::new("💾 Save to game")).clicked() {
                 let p = games[*selected].as_ref();
                 if sys::any_process_running(&p.running_processes()) {

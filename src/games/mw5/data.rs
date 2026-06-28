@@ -120,37 +120,36 @@ pub(super) fn default_bindings() -> Vec<Binding> {
         b("JoystickLegRotation", "Throttle_Axis1", 1.0),   // rudder slide -> turn L/R
         b("JoystickThrottle", "Throttle_Axis2", 1.0),      // RIGHT toe press -> forward
         b("JoystickStrafeRight", "", 1.0),
-        // --- weapons: all on the AB6 (Joystick) buttons/hat ---
+        // --- buttons: the user's physical AB6/MHG layout (numbers read off the
+        // live panel). MW5 caps OutButtons at Joystick_Button1..20 (21+ is dead).
+        // Weapon groups: trigger = group 1 (btn1), group 2 = btn2, and the 4-way
+        // weapon hat (no centre press) = groups 3-6 on buttons 12/13/14/15.
         b("FireWeaponGroup1", "Joystick_Button1", 1.0),
         b("FireWeaponGroup2", "Joystick_Button2", 1.0),
-        b("FireWeaponGroup3", "Joystick_Button3", 1.0),
-        b("FireWeaponGroup4", "Joystick_Button4", 1.0),
-        b("FireWeaponGroup5", "Joystick_Button5", 1.0),
-        b("FireWeaponGroup6", "Joystick_Button6", 1.0),
+        b("FireWeaponGroup3", "Joystick_Button12", 1.0),
+        b("FireWeaponGroup4", "Joystick_Button13", 1.0),
+        b("FireWeaponGroup5", "Joystick_Button14", 1.0),
+        b("FireWeaponGroup6", "Joystick_Button15", 1.0),
         b("ToggleWeaponGroup", "Joystick_Button7", 1.0),
+        // Jump jets: placeholder on btn9 — the red button + pinky weren't numbered,
+        // so click this chip and press the red button to capture it (our model binds
+        // one button per action, so put the pinky on Jump Jets / ToggleJumpJets too).
         b("ActivateJumpJets", "Joystick_Button9", 1.0),
-        b("SelectPreviousWeapon", "Joystick_Button14", 1.0),
-        b("SelectNextWeapon", "Joystick_Button15", 1.0),
-        b("SelectPreviousWeaponGroup", "Joystick_Button16", 1.0),
-        b("SelectNextWeaponGroup", "Joystick_Button17", 1.0),
-        b("CenterTorso", "Joystick_Button18", 1.0),
-        b("CenterLegs", "Joystick_Button19", 1.0),
-        // targeting moved OFF the hat (the hat now looks) onto free AB6 buttons.
-        // NB: MW5 only has Joystick_Button1..20 — Button21 is an invalid/dead token.
-        b("TargetNearestHostileToCrosshair", "Joystick_Button20", 1.0),
-        b("TargetNextHostile", "Joystick_Button12", 1.0),
-        b("TogglePower", "Joystick_Button13", 1.0),
-        b("ToggleOverride", "Joystick_Button10", 1.0),
-        // Zoom on two buttons (the user's "in front of the green button" rocker).
-        // MW5 caps OutButtons at 20 and they were all taken, so zoom reclaims the
-        // two lowest-value slots; Battle Grid + Night Vision stay in the catalog to
-        // re-bind by hand. If your zoom button isn't 8/11, click the chip and press it.
+        // 1st / 3rd person on button 5; Target Under Crosshair on button 10.
+        b("ToggleView", "Joystick_Button5", 1.0),
+        b("TargetNearestHostileToCrosshair", "Joystick_Button10", 1.0),
+        // Zoom on the rocker in front of the green button (placeholder 8/11 — rebind
+        // by clicking the chip and pressing if your zoom buttons differ).
         b("IncreaseZoom", "Joystick_Button8", 1.0),   // Zoom In
         b("DecreaseZoom", "Joystick_Button11", 1.0),  // Zoom Out
-        // Camera on the free hat diagonals (cardinals 1/3/5/7 already drive look).
-        b("ToggleView", "Joystick_Hat_2", 1.0),     // hat ↗ = 1st/3rd person
-        b("ToggleFreeLook", "Joystick_Hat_8", 1.0), // hat ↖ = free look
-        b("CycleZoom", "Joystick_Hat_4", 1.0),      // hat ↘ = zoom
-        b("ToggleChainFire", "Joystick_Hat_6", 1.0),// hat ↙ = chain fire (last free way)
+        // remaining essentials on the free buttons (3/4/6/16-20).
+        b("ToggleOverride", "Joystick_Button3", 1.0),
+        b("TogglePower", "Joystick_Button4", 1.0),
+        b("TargetNextHostile", "Joystick_Button6", 1.0),
+        b("SelectPreviousWeapon", "Joystick_Button16", 1.0),
+        b("SelectNextWeapon", "Joystick_Button17", 1.0),
+        b("CenterTorso", "Joystick_Button18", 1.0),
+        b("CenterLegs", "Joystick_Button19", 1.0),
+        b("SelectPreviousWeaponGroup", "Joystick_Button20", 1.0),
     ]
 }
