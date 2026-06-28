@@ -102,12 +102,13 @@ fn mrp_pedal_block() -> String {
     let mut s = String::from("START_BIND\r\nNAME: MOZA MRP Rudder Pedals\r\nVID: 0x346E\r\nPID: 0x1200\r\n");
     // rudder swing-arm (Rz, centred) -> leg turn
     s.push_str("AXIS: InAxis=HOTAS_RZAxis, OutAxis=Throttle_Axis1, Invert=FALSE, Offset=-0.5, DeadZoneMin=-0.05, DeadZoneMax=0.05, MapToDeadZone=TRUE\r\n");
-    // RIGHT toe ONLY -> forward throttle. MW5 reads only ONE axis line per OutAxis (it
-    // does NOT sum two toes). The toe normalises 0..1 (rest=0, press=1) — verified live:
-    // Offset=-1.0 pinned it backward, Offset=+1.0 pinned it FORWARD, so the neutral
-    // Offset is 0.0 = rest at stop, press drives forward. Reverse lives on a button
-    // (ThrottleDecrease) since two unipolar toes can't drive one bipolar axis.
-    s.push_str("AXIS: InAxis=GenericUSBController_Axis1, OutAxis=Throttle_Axis2, Invert=FALSE, Offset=0.0, DeadZoneMin=-0.05, DeadZoneMax=0.05, MapToDeadZone=TRUE\r\n");
+    // RIGHT toe ONLY -> forward throttle. MW5 reads only ONE axis line per OutAxis.
+    // Offset guessing failed (the toe's normalisation is unclear), so instead make rest
+    // = STOP robustly: the toe rests at the LOW end of its travel, so DEADZONE the whole
+    // bottom (DeadZoneMin=-1.0 .. DeadZoneMax=0.15, MapToDeadZone=TRUE). Anything from
+    // rest up to ~15% press outputs 0 (no constant crawl, whether MW5 maps the axis as
+    // 0..1 or -1..1); pressing past that ramps forward. Reverse is on a button.
+    s.push_str("AXIS: InAxis=GenericUSBController_Axis1, OutAxis=Throttle_Axis2, Invert=FALSE, Offset=0.0, DeadZoneMin=-1.0, DeadZoneMax=0.15, MapToDeadZone=TRUE\r\n");
     s
 }
 
