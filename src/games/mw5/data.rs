@@ -144,7 +144,9 @@ pub(super) fn default_bindings() -> Vec<Binding> {
         b("IncreaseZoom", "Joystick_Button8", 1.0),   // Zoom In
         b("DecreaseZoom", "Joystick_Button11", 1.0),  // Zoom Out
         // remaining essentials on the free buttons (3/4/6/16-20).
-        b("ToggleOverride", "Joystick_Button3", 1.0),
+        // Button 3 = reverse (throttle down). Two unipolar toes can't make a bipolar
+        // throttle in MW5, so the left toe's reverse moves to this button.
+        b("ThrottleDecrease", "Joystick_Button3", 1.0),
         b("TogglePower", "Joystick_Button4", 1.0),
         b("TargetNextHostile", "Joystick_Button6", 1.0),
         b("SelectPreviousWeapon", "Joystick_Button16", 1.0),
