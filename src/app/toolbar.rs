@@ -116,25 +116,9 @@ pub(super) fn top_bar(
                     }
                 }
             }
-            // Lock toggle: MW5 rewrites GameUserSettings (resetting joystick
-            // bindings to stock) on launch. Read-only stops that. Trade-off:
-            // other in-game settings won't save until unlocked.
-            if avail && games[*selected].name().contains("MechWarrior") {
-                let locked = crate::games::mw5::config_is_locked();
-                let label = if locked { "🔓 Unlock config" } else { "🔒 Lock config" };
-                let hover = if locked {
-                    "Config is LOCKED so MW5 can't reset your bindings. Click to unlock (lets graphics/audio settings save again)."
-                } else {
-                    "Make GameUserSettings read-only so MW5 stops resetting your joystick bindings on launch."
-                };
-                if ui.add(egui::Button::new(label)).on_hover_text(hover).clicked() {
-                    match crate::games::mw5::set_config_locked(!locked) {
-                        Ok(()) => *status = if locked { "Config unlocked — MW5 can save settings again.".into() }
-                                             else { "Config LOCKED ✓  MW5 can no longer reset your bindings.".into() },
-                        Err(e) => *status = format!("Lock toggle failed: {}", e),
-                    }
-                }
-            }
+            // (Config-lock feature removed: MW5 doesn't actually rewrite the bindings on
+            // launch, and a read-only config can make MW5 ignore it — so save() just
+            // ensures the file is writable and leaves it that way.)
             // Virtual throttle (vJoy): combine the two toe pedals into ONE bipolar axis on
             // vJoy device 1, fed live by the app. Toggle on, then bind the vJoy axis to throttle.
             let vjoy_ok = crate::vjoy::available();

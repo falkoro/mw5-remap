@@ -17,14 +17,8 @@ pub(super) fn set_readonly(path: &std::path::Path, ro: bool) -> Result<(), Strin
     std::fs::set_permissions(path, perm).map_err(|e| e.to_string())
 }
 
-/// True if GameUserSettings is currently locked (read-only) against MW5 resets.
-pub fn config_is_locked() -> bool {
-    Mw5::new().config_path().metadata().map(|m| m.permissions().readonly()).unwrap_or(false)
-}
-
-/// Lock/unlock GameUserSettings. Locking (read-only) stops MW5 from rewriting your
-/// joystick bindings back to its stock defaults when it launches. Trade-off: other
-/// in-game settings (graphics/audio) also won't save until you unlock.
+/// Lock/unlock GameUserSettings (kept for the `--lock`/`--unlock` CLI / recovery only;
+/// the GUI lock feature was removed because a read-only config can make MW5 ignore it).
 pub fn set_config_locked(lock: bool) -> Result<(), String> {
     set_readonly(&Mw5::new().config_path(), lock)
 }
