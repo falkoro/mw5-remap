@@ -12,25 +12,42 @@ use std::sync::{Arc, Mutex};
 
 type UpdateCell = Arc<Mutex<Option<(String, String)>>>;
 
-/// The "Update available" banner shown at the very top when the background check
-/// found a newer release. Returns nothing; mutates `status`/`update` in place.
+/// A floating "Update available" toast pinned to the TOP-RIGHT, styled to match the
+/// app chrome (dark card + the green LIVE accent) — the template for future toasts.
+/// Shown only when the background check found a newer release.
 pub(super) fn update_banner(ctx: &egui::Context, status: &mut String, update: &UpdateCell) {
-    let pending_update = update.lock().unwrap().clone();
-    if let Some((ver, url)) = pending_update {
-        egui::TopBottomPanel::top("update_banner").show(ctx, |ui| {
-            ui.add_space(3.0);
-            ui.horizontal(|ui| {
-                ui.label(egui::RichText::new(format!("🔔 Update available: v{ver}  (you have v{})", crate::update::current_version()))
-                    .strong().color(egui::Color32::from_rgb(40, 150, 60)));
-                if ui.button("Update now").clicked() {
-                    *status = format!("Downloading v{ver}… the app will relaunch.");
-                    if let Err(e) = crate::update::apply(&url) { *status = format!("Update failed: {e}"); }
-                }
-                if ui.button("Later").clicked() { *update.lock().unwrap() = None; }
-            });
-            ui.add_space(3.0);
+    let (ver, url) = match update.lock().unwrap().clone() { Some(p) => p, None => return };
+    let accent = super::widgets::LIVE;
+    egui::Area::new(egui::Id::new("update_toast"))
+        .order(egui::Order::Foreground)
+        .anchor(egui::Align2::RIGHT_TOP, egui::vec2(-12.0, 12.0))
+        .show(ctx, |ui| {
+            egui::Frame::popup(ui.style())
+                .fill(egui::Color32::from_rgb(30, 34, 46))
+                .stroke(egui::Stroke::new(1.0, accent))
+                .rounding(egui::Rounding::same(10.0))
+                .inner_margin(egui::Margin::symmetric(12.0, 10.0))
+                .show(ui, |ui| {
+                    ui.set_max_width(250.0);
+                    ui.label(egui::RichText::new("⬆  Update available").strong().color(accent));
+                    ui.label(egui::RichText::new(format!("v{ver}  ·  you have v{}", crate::update::current_version()))
+                        .size(12.0).color(egui::Color32::from_rgb(150, 165, 190)));
+                    ui.add_space(7.0);
+                    ui.horizontal(|ui| {
+                        let now = egui::Button::new(egui::RichText::new("Update now").strong().color(egui::Color32::from_rgb(12, 18, 14)))
+                            .fill(accent).rounding(egui::Rounding::same(6.0));
+                        if ui.add(now).clicked() {
+                            *status = format!("Downloading v{ver}… the app will relaunch.");
+                            if let Err(e) = crate::update::apply(&url) { *status = format!("Update failed: {e}"); }
+                        }
+                        if ui.add(egui::Button::new(egui::RichText::new("Later").color(egui::Color32::from_rgb(190, 200, 215)))
+                            .fill(egui::Color32::from_rgb(48, 54, 70)).rounding(egui::Rounding::same(6.0))).clicked()
+                        {
+                            *update.lock().unwrap() = None;
+                        }
+                    });
+                });
         });
-    }
 }
 
 /// Footer overlays. A real TopBottomPanel::bottom gets overpainted by the central
