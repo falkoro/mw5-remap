@@ -141,8 +141,12 @@ pub(super) fn default_bindings() -> Vec<Binding> {
         b("TargetNextHostile", "Joystick_Button12", 1.0),
         b("TogglePower", "Joystick_Button13", 1.0),
         b("ToggleOverride", "Joystick_Button10", 1.0),
-        b("ToggleBattleGridPanel", "Joystick_Button8", 1.0),
-        b("ToggleNightVision", "Joystick_Button11", 1.0),
+        // Zoom on two buttons (the user's "in front of the green button" rocker).
+        // MW5 caps OutButtons at 20 and they were all taken, so zoom reclaims the
+        // two lowest-value slots; Battle Grid + Night Vision stay in the catalog to
+        // re-bind by hand. If your zoom button isn't 8/11, click the chip and press it.
+        b("IncreaseZoom", "Joystick_Button8", 1.0),   // Zoom In
+        b("DecreaseZoom", "Joystick_Button11", 1.0),  // Zoom Out
         // Camera on the free hat diagonals (cardinals 1/3/5/7 already drive look).
         b("ToggleView", "Joystick_Hat_2", 1.0),     // hat ↗ = 1st/3rd person
         b("ToggleFreeLook", "Joystick_Hat_8", 1.0), // hat ↖ = free look

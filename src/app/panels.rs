@@ -34,32 +34,20 @@ pub(super) fn update_banner(ctx: &egui::Context, status: &mut String, update: &U
 }
 
 /// Footer overlays. A real TopBottomPanel::bottom gets overpainted by the central
-/// columns here, so we float these on top of everything instead: build
-/// branch/version + manual update at the bottom-right, status at the bottom-left.
-pub(super) fn footers(ctx: &egui::Context, status: &mut String, update: &UpdateCell) {
+/// columns here, so we float these on top of everything instead: a tiny, unobtrusive
+/// version stamp at the bottom-right (no box, no button — updates surface only via the
+/// banner when one is actually available), status at the bottom-left.
+pub(super) fn footers(ctx: &egui::Context, status: &mut String) {
     egui::Area::new(egui::Id::new("footer_build"))
         .order(egui::Order::Foreground)
-        .anchor(egui::Align2::RIGHT_BOTTOM, egui::vec2(-10.0, -8.0))
+        .anchor(egui::Align2::RIGHT_BOTTOM, egui::vec2(-8.0, -4.0))
         .show(ctx, |ui| {
-            egui::Frame::popup(ui.style()).fill(egui::Color32::from_rgb(28, 32, 44)).show(ui, |ui| {
-                ui.horizontal(|ui| {
-                    let branch = match env!("GIT_BRANCH") { "" => "local", b => b };
-                    let hash = env!("GIT_HASH");
-                    let tag = if hash.is_empty() { format!("{branch} · v{}", crate::update::current_version()) }
-                              else { format!("{branch}@{hash} · v{}", crate::update::current_version()) };
-                    ui.label(egui::RichText::new(tag).monospace().color(egui::Color32::from_rgb(150, 165, 190)));
-                    if ui.button("⟳ Update").on_hover_text("Check GitHub for a newer release and install it").clicked() {
-                        match crate::update::latest() {
-                            Some((ver, url)) if crate::update::is_newer(&ver) => {
-                                *update.lock().unwrap() = Some((ver.clone(), url));
-                                *status = format!("Update available: v{ver} — click \"Update now\" in the banner above.");
-                            }
-                            Some((ver, _)) => *status = format!("You're up to date (v{}). Latest published is v{ver}.", crate::update::current_version()),
-                            None => *status = "Update check failed — no connection, or no release published yet.".into(),
-                        }
-                    }
-                });
-            });
+            // Small inline version, the way polished apps do it: just a faint stamp.
+            let branch = match env!("GIT_BRANCH") { "" => "local", b => b };
+            let hash = env!("GIT_HASH");
+            let tag = if hash.is_empty() { format!("v{}", crate::update::current_version()) }
+                      else { format!("v{} · {branch}@{hash}", crate::update::current_version()) };
+            ui.label(egui::RichText::new(tag).monospace().size(9.5).color(egui::Color32::from_rgb(120, 130, 150)));
         });
     egui::Area::new(egui::Id::new("footer_status"))
         .order(egui::Order::Foreground)

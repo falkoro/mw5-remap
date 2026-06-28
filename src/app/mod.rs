@@ -201,7 +201,7 @@ impl eframe::App for App {
 
         panels::central(ctx, games, *selected, textures, devices, capture, rows, actions, status, &groups);
 
-        panels::footers(ctx, status, update);
+        panels::footers(ctx, status);
 
         // Export device-sheet flow: dialog -> (filtered repaint) -> screenshot -> crop + write.
         // We arm `pending_export` first so the NEXT frame paints the side panel with the
