@@ -128,18 +128,19 @@ fn axis_deflected(devices: &[Device], token: &str) -> bool {
     // at ~0 (the 32767 seen on a cold first read is a winmm artifact; once polling
     // they sit at 0 and press up to ~64000). Engaged when either toe is pressed in.
     if token == "Throttle_Axis2" {
-        // Both toe brakes are unipolar, resting at ~0 (toes = X(0)/Y(1)).
+        // The MRP toe brakes are unipolar, resting at 0 — confirmed live they are
+        // Rx(3) / Ry(4) (NOT X/Y). Either toe pressed in = throttle engaged.
         return match devices.iter().find(|d| (d.vid, d.pid) == MRP) {
             Some(d) => {
-                d.axes.first().copied().unwrap_or(0) > 12000
-                    || d.axes.get(1).copied().unwrap_or(0) > 12000
+                d.axes.get(3).copied().unwrap_or(0) > 12000
+                    || d.axes.get(4).copied().unwrap_or(0) > 12000
             }
             None => false,
         };
     }
-    // Centred axes in the DirectInput 8-axis layout [X,Y,Z,Rx,Ry,Rz,S0,S1]: gimbal
-    // X=0/Y=1, analog hat Rx=3 (vertical) / Ry=4 (horizontal), rudder Rz=5. Engaged
-    // when pushed past ~14% off centre.
+    // Centred axes in the DirectInput 8-axis layout [X,Y,Z,Rx,Ry,Rz,S0,S1]: AB6 gimbal
+    // X=0/Y=1, AB6 analog hat Rx=3 (vertical) / Ry=4 (horizontal), MRP rudder Rz=5.
+    // Engaged when pushed past ~14% off centre.
     let (id, idx) = match token {
         "Joystick_Axis1" => (AB6, 1), // gimbal pitch (Y)
         "Joystick_Axis2" => (AB6, 0), // gimbal roll (X)
@@ -192,6 +193,7 @@ fn live_axes(ui: &mut egui::Ui, devices: &[Device], p: &dyn GameProvider) {
     for (di, d) in devices.iter().enumerate() {
         ui.label(egui::RichText::new(&d.name).strong().small());
         for i in 0..8 {
+            if !d.present[i] { continue; } // only the axes Windows actually detects
             let v = d.axes[i];
             let tok = p.axis_token(d, i, di).unwrap_or_default();
             let tok = tok.strip_prefix("Joystick_").or_else(|| tok.strip_prefix("Throttle_")).unwrap_or(&tok);

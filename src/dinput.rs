@@ -261,11 +261,14 @@ unsafe fn init() -> Option<DiContext> {
 }
 
 /// One controller as DirectInput sees it. `axes` is [X,Y,Z,Rx,Ry,Rz,S0,S1] 0..65535.
+/// `present[i]` is true only for axes the device actually reports (detected by a
+/// sentinel pre-fill — DIDFT_OPTIONAL means absent axes aren't written).
 pub struct DiAxes {
     pub vid: u16,
     pub pid: u16,
     pub name: String,
     pub axes: [u32; 8],
+    pub present: [bool; 8],
     pub buttons: u32,
     pub pov: u32,
     pub num_axes: u32,
@@ -286,21 +289,31 @@ pub fn poll() -> Vec<DiAxes> {
         for d in &ctx.devices {
             unsafe {
                 let dv = vtbl::<IDirectInputDevice8Vtbl>(d.dev);
+                // Pre-fill axes with a sentinel: DIDFT_OPTIONAL means axes the device
+                // doesn't have are left untouched by GetDeviceState, so anything still
+                // at the sentinel afterwards is an axis Windows does NOT detect.
+                let mut st = DiState { axes: [i32::MIN; 8], pov: 0, buttons: [0; 32] };
                 let _ = ((*dv).Poll)(d.dev);
-                let mut st: DiState = DiState::default();
                 let rc = ((*dv).GetDeviceState)(d.dev, std::mem::size_of::<DiState>() as u32, &mut st as *mut _ as *mut c_void);
                 if rc == DIERR_INPUTLOST || rc == DIERR_NOTACQUIRED {
                     let _ = ((*dv).Acquire)(d.dev);
                     let _ = ((*dv).Poll)(d.dev);
+                    st.axes = [i32::MIN; 8];
                     let _ = ((*dv).GetDeviceState)(d.dev, std::mem::size_of::<DiState>() as u32, &mut st as *mut _ as *mut c_void);
                 }
                 let mut axes = [0u32; 8];
-                for i in 0..8 { axes[i] = st.axes[i].clamp(0, 65535) as u32; }
+                let mut present = [false; 8];
+                for i in 0..8 {
+                    if st.axes[i] != i32::MIN {
+                        present[i] = true;
+                        axes[i] = st.axes[i].clamp(0, 65535) as u32;
+                    }
+                }
                 let mut buttons = 0u32;
                 for b in 0..32 { if st.buttons[b] & 0x80 != 0 { buttons |= 1 << b; } }
                 out.push(DiAxes {
                     vid: d.vid, pid: d.pid, name: d.name.clone(),
-                    axes, buttons, pov: st.pov,
+                    axes, present, buttons, pov: st.pov,
                     num_axes: d.num_axes, num_buttons: d.num_buttons, has_pov: d.has_pov,
                 });
             }

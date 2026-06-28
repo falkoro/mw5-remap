@@ -41,6 +41,10 @@ struct JoyInfoEx {
 const JOY_RETURNALL: u32 = 0x0000_00FF;
 const JOYERR_NOERROR: u32 = 0;
 const JOY_POVCENTERED: u32 = 0xFFFF;
+const JOYCAPS_HASZ: u32 = 0x0000_0001;
+const JOYCAPS_HASR: u32 = 0x0000_0002;
+const JOYCAPS_HASU: u32 = 0x0000_0004;
+const JOYCAPS_HASV: u32 = 0x0000_0008;
 const JOYCAPS_HASPOV: u32 = 0x0000_0010; // device actually has a POV hat
 
 #[link(name = "winmm")]
@@ -78,6 +82,7 @@ pub struct Device {
     pub num_axes: u32,
     pub num_buttons: u32,
     pub axes: [u32; 8],
+    pub present: [bool; 8], // which of the 8 axis slots the device actually reports
     pub buttons: u32, // bitmask, bit b => button b+1 pressed
     pub pov: u32,     // centidegrees, or 0xFFFF when centered
     pub has_pov: bool, // false => ignore pov (device has no hat; some report 0)
@@ -153,6 +158,7 @@ pub fn poll() -> Vec<Device> {
             num_axes: d.num_axes,
             num_buttons: d.num_buttons,
             axes: d.axes, // [X,Y,Z,Rx,Ry,Rz,S0,S1]
+            present: d.present,
             buttons: d.buttons,
             pov: d.pov,
             has_pov: d.has_pov,
@@ -184,6 +190,12 @@ fn poll_winmm() -> Vec<Device> {
             let p = pcwstr_to_string(&caps.sz_pname);
             if p.is_empty() { vidpid.clone() } else { p }
         });
+        // winmm caps flags: which optional axes exist. X/Y always present; no Rx/Ry.
+        let c = caps.w_caps;
+        let present = [
+            true, true, c & JOYCAPS_HASZ != 0, false, false,
+            c & JOYCAPS_HASR != 0, c & JOYCAPS_HASU != 0, c & JOYCAPS_HASV != 0,
+        ];
         out.push(Device {
             id,
             vid: caps.w_mid,
@@ -192,6 +204,7 @@ fn poll_winmm() -> Vec<Device> {
             num_axes: caps.w_num_axes,
             num_buttons: caps.w_num_buttons,
             axes: [info.dw_xpos, info.dw_ypos, info.dw_zpos, 0, 0, info.dw_rpos, info.dw_upos, info.dw_vpos],
+            present,
             buttons: info.dw_buttons,
             pov: info.dw_pov,
             has_pov: caps.w_caps & JOYCAPS_HASPOV != 0,

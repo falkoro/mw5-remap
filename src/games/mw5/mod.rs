@@ -205,13 +205,13 @@ impl GameProvider for Mw5 {
                 };
                 Some(format!("Joystick_Axis{n}"))
             }
-            // MRP pedals: the .Remap routes BOTH toes (X/Y) to Throttle_Axis2 (the
-            // bipolar throttle; left toe is the reverse half) and the rudder swing-arm
-            // (Rz, DI index 5) to Throttle_Axis1. Capture must produce the SAME tokens
-            // or a press-to-bind lands on a slot that does nothing in-game.
+            // MRP pedals: confirmed live the toes are Rx(3)/Ry(4) (NOT X/Y) and the
+            // rudder swing-arm is Rz(5). Both toes -> Throttle_Axis2 (bipolar throttle,
+            // left toe = reverse half); rudder -> Throttle_Axis1. Capture must produce
+            // the SAME tokens or a press-to-bind lands on a dead slot.
             Role::Throttle if (dev.vid, dev.pid) == PEDALS => {
                 let n = match axis_index {
-                    0 | 1 => 2, // right/left toe -> throttle (fwd / reverse)
+                    3 | 4 => 2, // right/left toe (Rx/Ry) -> throttle (fwd / reverse)
                     5 => 1,     // rudder swing-arm (Rz) -> leg turn
                     other => other + 1,
                 };
