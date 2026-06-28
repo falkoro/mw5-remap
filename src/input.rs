@@ -66,7 +66,9 @@ extern "system" {
     ) -> i32;
 }
 
-/// One physical controller, as winmm sees it. `axes` is [X,Y,Z,R,U,V] (0..65535).
+/// One physical controller. `axes` is 8 slots: when read via DirectInput (preferred)
+/// they are [X,Y,Z,Rx,Ry,Rz,Slider0,Slider1]; the winmm fallback fills [X,Y,Z,_,_,Rz,U,V]
+/// (no Rx/Ry — that's winmm's limitation). All 0..65535, centre ~32767.
 #[derive(Clone, Debug)]
 pub struct Device {
     pub id: u32,
@@ -75,7 +77,7 @@ pub struct Device {
     pub name: String,
     pub num_axes: u32,
     pub num_buttons: u32,
-    pub axes: [u32; 6],
+    pub axes: [u32; 8],
     pub buttons: u32, // bitmask, bit b => button b+1 pressed
     pub pov: u32,     // centidegrees, or 0xFFFF when centered
     pub has_pov: bool, // false => ignore pov (device has no hat; some report 0)
@@ -137,8 +139,32 @@ fn oem_name(vidpid: &str) -> Option<String> {
     None
 }
 
-/// Poll every connected joystick. Cheap enough to call each UI frame.
+/// Poll every connected joystick. Cheap enough to call each UI frame. Prefers
+/// DirectInput (exposes Rx/Ry/sliders — what the Windows Game Controllers panel
+/// shows), and falls back to winmm only if DirectInput yields nothing.
 pub fn poll() -> Vec<Device> {
+    let di = crate::dinput::poll();
+    if !di.is_empty() {
+        return di.into_iter().enumerate().map(|(i, d)| Device {
+            id: i as u32,
+            vid: d.vid,
+            pid: d.pid,
+            name: d.name,
+            num_axes: d.num_axes,
+            num_buttons: d.num_buttons,
+            axes: d.axes, // [X,Y,Z,Rx,Ry,Rz,S0,S1]
+            buttons: d.buttons,
+            pov: d.pov,
+            has_pov: d.has_pov,
+        }).collect();
+    }
+    poll_winmm()
+}
+
+/// winmm fallback. Maps the 6 winmm slots into the 8-axis layout: X,Y,Z keep their
+/// index, winmm R(=Rz)->5, and U/V (winmm's 5th/6th) land in the slider slots 6/7.
+/// Rx/Ry (3/4) stay 0 — winmm can't see them; that's why we prefer DirectInput.
+fn poll_winmm() -> Vec<Device> {
     let mut out = Vec::new();
     let n = unsafe { joyGetNumDevs() };
     for id in 0..n {
@@ -165,7 +191,7 @@ pub fn poll() -> Vec<Device> {
             name,
             num_axes: caps.w_num_axes,
             num_buttons: caps.w_num_buttons,
-            axes: [info.dw_xpos, info.dw_ypos, info.dw_zpos, info.dw_rpos, info.dw_upos, info.dw_vpos],
+            axes: [info.dw_xpos, info.dw_ypos, info.dw_zpos, 0, 0, info.dw_rpos, info.dw_upos, info.dw_vpos],
             buttons: info.dw_buttons,
             pov: info.dw_pov,
             has_pov: caps.w_caps & JOYCAPS_HASPOV != 0,

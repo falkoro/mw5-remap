@@ -135,7 +135,7 @@ impl App {
                 Kind::Axis => {
                     let base = cap.baseline.get(&dev.id).copied().unwrap_or(dev.axes);
                     let mut best = (0i64, 0usize);
-                    for ax in 0..6 {
+                    for ax in 0..8 {
                         let d = (dev.axes[ax] as i64 - base[ax] as i64).abs();
                         if d > best.0 { best = (d, ax); }
                     }

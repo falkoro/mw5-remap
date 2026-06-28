@@ -5,6 +5,7 @@ mod app;
 mod cli;
 mod devices;
 mod diagram;
+mod dinput;
 mod export;
 mod games;
 mod hidhide;

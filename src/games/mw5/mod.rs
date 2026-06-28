@@ -193,24 +193,26 @@ impl GameProvider for Mw5 {
             // AB6: map each winmm axis to the OutAxis the .Remap actually routes it to,
             // so press-to-bind captures a token that works in-game (incl. the analog
             // thumb hat on winmm U/V -> Joystick_Axis4/Axis5).
+            // DirectInput 8-axis layout [X,Y,Z,Rx,Ry,Rz,S0,S1]. AB6 gimbal X=0/Y=1;
+            // the analog hat is Rx=3 (vertical) / Ry=4 (horizontal).
             Role::Joystick if (dev.vid, dev.pid) == BASE => {
                 let n = match axis_index {
                     1 => 1, // Y gimbal -> pitch
                     0 => 2, // X gimbal -> roll
-                    4 => 4, // U thumb-hat / POV  -> Joystick_Axis4
-                    5 => 5, // V thumb-hat / POV  -> Joystick_Axis5
+                    3 => 4, // Rx analog hat vertical  -> Joystick_Axis4
+                    4 => 5, // Ry analog hat horizontal -> Joystick_Axis5
                     other => other + 1,
                 };
                 Some(format!("Joystick_Axis{n}"))
             }
-            // MRP pedals: the .Remap routes BOTH toes (winmm X/Y) to Throttle_Axis2
-            // (the bipolar throttle; left toe is the reverse half) and the rudder
-            // swing-arm (winmm R) to Throttle_Axis1. Capture must produce the SAME
-            // tokens or a press-to-bind lands on a slot that does nothing in-game.
+            // MRP pedals: the .Remap routes BOTH toes (X/Y) to Throttle_Axis2 (the
+            // bipolar throttle; left toe is the reverse half) and the rudder swing-arm
+            // (Rz, DI index 5) to Throttle_Axis1. Capture must produce the SAME tokens
+            // or a press-to-bind lands on a slot that does nothing in-game.
             Role::Throttle if (dev.vid, dev.pid) == PEDALS => {
                 let n = match axis_index {
                     0 | 1 => 2, // right/left toe -> throttle (fwd / reverse)
-                    3 => 1,     // rudder swing-arm -> leg turn
+                    5 => 1,     // rudder swing-arm (Rz) -> leg turn
                     other => other + 1,
                 };
                 Some(format!("Throttle_Axis{n}"))

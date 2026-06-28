@@ -14,7 +14,7 @@ pub(super) struct Capture {
     pub row: usize,
     pub kind: Kind,
     pub ignore: HashSet<String>,        // controls already held when capture began
-    pub baseline: HashMap<u32, [u32; 6]>, // axis rest values per device id
+    pub baseline: HashMap<u32, [u32; 8]>, // axis rest values per device id
 }
 
 pub(super) const CAPTURING: egui::Color32 = egui::Color32::from_rgb(235, 170, 45); // orange: listening

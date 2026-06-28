@@ -9,11 +9,11 @@ use crate::{diagram, input};
 pub fn monitor() {
     use std::time::{Duration, SystemTime};
     println!("== input monitor: move your controls now (25s) ==");
-    println!("(axis array = [X Y Z R U V], 0..65535, centre ~32767; pov in centi-deg, 65535=centred)\n");
+    println!("(axis array = [X Y Z Rx Ry Rz S0 S1] via DirectInput, 0..65535, centre ~32767; pov in centi-deg, 65535=centred)\n");
     // remember last-printed state per device id to only log changes
-    let mut last: std::collections::HashMap<u32, (u32, u32, [u32; 6])> = std::collections::HashMap::new();
+    let mut last: std::collections::HashMap<u32, (u32, u32, [u32; 8])> = std::collections::HashMap::new();
     let start = SystemTime::now();
-    let axis_names = ["X", "Y", "Z", "R", "U", "V"];
+    let axis_names = ["X", "Y", "Z", "Rx", "Ry", "Rz", "S0", "S1"];
     while start.elapsed().map(|d| d.as_secs()).unwrap_or(99) < 25 {
         for d in input::poll() {
             let prev = last.get(&d.id).copied();
@@ -31,7 +31,7 @@ pub fn monitor() {
             }
             // axes that moved > ~5% from their previous reading
             if let Some(p) = prev {
-                for i in 0..6 {
+                for i in 0..8 {
                     if (d.axes[i] as i64 - p.2[i] as i64).abs() > 3000 {
                         msgs.push(format!("axis {}={}", axis_names[i], d.axes[i]));
                     }
@@ -192,8 +192,8 @@ pub fn dump_devices() {
         let role = mw5.role_of(d, idx);
         println!("#{} [{}] {}  VID_{:04X}&PID_{:04X}  {} axes {} btns  has_pov={}",
             d.id, role.label(), d.name, d.vid, d.pid, d.num_axes, d.num_buttons, d.has_pov);
-        println!("    axes X{} Y{} Z{} R{} U{} V{}  pov={}",
-            d.axes[0], d.axes[1], d.axes[2], d.axes[3], d.axes[4], d.axes[5], d.pov);
+        println!("    axes X{} Y{} Z{} Rx{} Ry{} Rz{} S0{} S1{}  pov={}",
+            d.axes[0], d.axes[1], d.axes[2], d.axes[3], d.axes[4], d.axes[5], d.axes[6], d.axes[7], d.pov);
         for b in d.pressed_buttons() {
             if let Some(t) = mw5.button_token(d, b, idx) { println!("    pressed button {} -> token {}", b, t); }
         }

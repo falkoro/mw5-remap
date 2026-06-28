@@ -128,6 +128,7 @@ fn axis_deflected(devices: &[Device], token: &str) -> bool {
     // at ~0 (the 32767 seen on a cold first read is a winmm artifact; once polling
     // they sit at 0 and press up to ~64000). Engaged when either toe is pressed in.
     if token == "Throttle_Axis2" {
+        // Both toe brakes are unipolar, resting at ~0 (toes = X(0)/Y(1)).
         return match devices.iter().find(|d| (d.vid, d.pid) == MRP) {
             Some(d) => {
                 d.axes.first().copied().unwrap_or(0) > 12000
@@ -136,21 +137,15 @@ fn axis_deflected(devices: &[Device], token: &str) -> bool {
             None => false,
         };
     }
-    // The analog hat's VERTICAL axis (winmm U -> Joystick_Axis4) is slider-like: it
-    // rests NEAR 0 (~3378), not centred (confirmed live — V is the centred one). So
-    // treat it unipolar; a resting hat would glow constantly under a centred check.
-    if token == "Joystick_Axis4" {
-        return devices.iter().find(|d| (d.vid, d.pid) == AB6)
-            .map(|d| d.axes.get(4).copied().unwrap_or(0) > 12000)
-            .unwrap_or(false);
-    }
-    // The remaining mapped axes are CENTRED ~32767 (gimbal, rudder swing-arm, and the
-    // hat's HORIZONTAL V axis); engaged when pushed past ~14% off centre.
+    // Centred axes in the DirectInput 8-axis layout [X,Y,Z,Rx,Ry,Rz,S0,S1]: gimbal
+    // X=0/Y=1, analog hat Rx=3 (vertical) / Ry=4 (horizontal), rudder Rz=5. Engaged
+    // when pushed past ~14% off centre.
     let (id, idx) = match token {
-        "Joystick_Axis1" => (AB6, 1), // HOTAS_YAxis (gimbal pitch)
-        "Joystick_Axis2" => (AB6, 0), // HOTAS_XAxis (gimbal roll)
-        "Joystick_Axis5" => (AB6, 5), // V axis (POV/thumb hat horizontal)
-        "Throttle_Axis1" => (MRP, 3), // HOTAS_RZAxis (rudder, centred)
+        "Joystick_Axis1" => (AB6, 1), // gimbal pitch (Y)
+        "Joystick_Axis2" => (AB6, 0), // gimbal roll (X)
+        "Joystick_Axis4" => (AB6, 3), // analog hat vertical (Rx)
+        "Joystick_Axis5" => (AB6, 4), // analog hat horizontal (Ry)
+        "Throttle_Axis1" => (MRP, 5), // rudder swing-arm (Rz)
         _ => return false,
     };
     match devices.iter().find(|d| (d.vid, d.pid) == id) {
@@ -189,14 +184,14 @@ pub fn hot_tokens(devices: &[Device], p: &dyn GameProvider) -> Vec<String> {
 /// the unused slots simply sit at 0. This is the ground-truth "is the tool seeing
 /// my axis" display; it ignores deadzones/bindings entirely.
 fn live_axes(ui: &mut egui::Ui, devices: &[Device], p: &dyn GameProvider) {
-    const NAMES: [&str; 6] = ["X", "Y", "Z", "R", "U", "V"];
+    const NAMES: [&str; 8] = ["X", "Y", "Z", "Rx", "Ry", "Rz", "S0", "S1"];
     if devices.is_empty() {
         ui.label(egui::RichText::new("no joysticks detected").weak());
         return;
     }
     for (di, d) in devices.iter().enumerate() {
         ui.label(egui::RichText::new(&d.name).strong().small());
-        for i in 0..6 {
+        for i in 0..8 {
             let v = d.axes[i];
             let tok = p.axis_token(d, i, di).unwrap_or_default();
             let tok = tok.strip_prefix("Joystick_").or_else(|| tok.strip_prefix("Throttle_")).unwrap_or(&tok);
