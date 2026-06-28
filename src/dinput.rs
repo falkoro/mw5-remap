@@ -9,7 +9,11 @@
 //! Everything is pure FFI (no extra crates). If init fails, `poll()` returns empty
 //! and the caller falls back to winmm.
 
-#![allow(non_snake_case, non_camel_case_types, non_upper_case_globals)]
+// Win32/COM FFI: type names mirror the SDK (acronyms, capitalised), some handles are
+// held only to keep the COM objects alive, and DIPROP_RANGE is the documented
+// MAKEDIPROP(4) "magic pointer" — all intentional, so quiet the matching lints here.
+#![allow(non_snake_case, non_camel_case_types, non_upper_case_globals, dead_code)]
+#![allow(clippy::upper_case_acronyms, clippy::manual_dangling_ptr, clippy::not_unsafe_ptr_arg_deref)]
 
 use std::cell::RefCell;
 use std::os::raw::c_void;
@@ -202,8 +206,8 @@ struct DiDevice {
 }
 
 struct DiContext {
-    di: *mut c_void,
-    hwnd: HWND,
+    di: *mut c_void,   // IDirectInput8 — held for the program's life so devices stay valid
+    hwnd: HWND,        // message-only window for SetCooperativeLevel — kept alive
     devices: Vec<DiDevice>,
 }
 
