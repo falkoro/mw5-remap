@@ -116,20 +116,21 @@ pub(super) fn top_bar(
             // (Config-lock feature removed: MW5 doesn't actually rewrite the bindings on
             // launch, and a read-only config can make MW5 ignore it — so save() just
             // ensures the file is writable and leaves it that way.)
-            // Virtual throttle (vJoy): combine the two toe pedals into ONE bipolar axis on
-            // vJoy device 1, fed live by the app. Toggle on, then bind the vJoy axis to throttle.
+            // vJoy mode: mirror the WHOLE MOZA rig (buttons + aim/look + throttle + rudder)
+            // onto ONE clean vJoy device, fed live by the app — so MW5 reads a tidy 20-button
+            // stick instead of the AB6's 128 buttons (which it collapses to "Button 1").
             let vjoy_ok = crate::vjoy::available();
-            let vlabel = if *vjoy_enabled { "🕹 vJoy throttle: ON" } else { "🕹 vJoy throttle" };
+            let vlabel = if *vjoy_enabled { "🕹 vJoy mode: ON" } else { "🕹 vJoy mode" };
             let vhover = if vjoy_ok {
-                "Combine both toe pedals into ONE bipolar throttle on vJoy device 1 (centre=stop, right toe=forward, left toe=reverse). Keep the app open while playing, then bind the vJoy axis to throttle."
+                "Mirror your MOZA stick+pedals onto ONE clean vJoy device so MW5's buttons actually fire (fixes the 128-button collapse). Toggle ON, 💾 Save, KEEP THE APP OPEN while playing, then bind controls in MW5 to the vJoy device."
             } else {
                 "vJoy not detected/enabled — install vJoy and configure device 1 first (status MISS/FREE)."
             };
             if ui.add_enabled(vjoy_ok, egui::SelectableLabel::new(*vjoy_enabled, vlabel)).on_hover_text(vhover).clicked() {
                 *vjoy_enabled = !*vjoy_enabled;
-                crate::vjoy::set_active(*vjoy_enabled); // gates the vJoy .Remap block / MRP skip
-                *status = if *vjoy_enabled { "Virtual throttle ON — feeding vJoy device 1; keep the app open while playing.".into() }
-                          else { "Virtual throttle off.".into() };
+                crate::vjoy::set_active(*vjoy_enabled); // gates the vJoy .Remap block / MOZA skip
+                *status = if *vjoy_enabled { "vJoy mode ON — mirroring your whole rig to vJoy. 💾 Save, then keep the app open while playing.".into() }
+                          else { "vJoy mode off.".into() };
             }
             if ui.add_enabled(avail, egui::Button::new("📊 Export diagram"))
                 .on_hover_text("Export the device images (with callouts) as PNG and/or PDF").clicked()

@@ -132,14 +132,23 @@ fn mrp_pedal_block() -> String {
     s
 }
 
-/// vJoy device (fed by our combiner): X = combined BIPOLAR throttle (centre=stop),
-/// RZ = rudder passthrough. Both are CENTRED axes, so Offset=-0.5 (unlike a raw toe).
-/// This makes vJoy the single clean Throttle device — the MRP block is skipped when
-/// vJoy is connected (see write_hotas_mappings), so the two don't fight for the slot.
+/// vJoy device — the SINGLE clean device the whole MOZA rig is mirrored onto (evilC
+/// approach), so MW5 reads tidy 20 buttons / 6 centred axes instead of the AB6's 128
+/// buttons (which it collapses to "Button 1"). Buttons 1..20 = AB6 stick buttons;
+/// X/Y = gimbal aim, Rx/Ry = thumb-hat look, Z = combined throttle, Rz = rudder. All
+/// axes are CENTRED by the feeder, so Offset=-0.5. Maps to BOTH Joystick+Throttle roles.
 fn vjoy_block() -> String {
     let mut s = String::from("START_BIND\r\nNAME: vJoy Device\r\nVID: 0x1234\r\nPID: 0xBEAD\r\n");
-    s.push_str("AXIS: InAxis=HOTAS_XAxis, OutAxis=Throttle_Axis2, Invert=FALSE, Offset=-0.5, DeadZoneMin=-0.05, DeadZoneMax=0.05, MapToDeadZone=TRUE\r\n");
-    s.push_str("AXIS: InAxis=HOTAS_RZAxis, OutAxis=Throttle_Axis1, Invert=FALSE, Offset=-0.5, DeadZoneMin=-0.05, DeadZoneMax=0.05, MapToDeadZone=TRUE\r\n");
+    for n in 1..=20 {
+        s.push_str(&format!("BUTTON: InButton=GenericUSBController_Button{n}, OutButtons=Joystick_Button{n}\r\n"));
+    }
+    let dz = "Invert=FALSE, Offset=-0.5, DeadZoneMin=-0.05, DeadZoneMax=0.05, MapToDeadZone=TRUE";
+    s.push_str(&format!("AXIS: InAxis=HOTAS_XAxis, OutAxis=Joystick_Axis1, {dz}\r\n"));
+    s.push_str(&format!("AXIS: InAxis=HOTAS_YAxis, OutAxis=Joystick_Axis2, {dz}\r\n"));
+    s.push_str(&format!("AXIS: InAxis=GenericUSBController_Axis4, OutAxis=Joystick_Axis4, {dz}\r\n"));
+    s.push_str(&format!("AXIS: InAxis=GenericUSBController_Axis5, OutAxis=Joystick_Axis5, {dz}\r\n"));
+    s.push_str(&format!("AXIS: InAxis=HOTAS_ZAxis, OutAxis=Throttle_Axis2, {dz}\r\n"));
+    s.push_str(&format!("AXIS: InAxis=HOTAS_RZAxis, OutAxis=Throttle_Axis1, {dz}\r\n"));
     s
 }
 
@@ -245,16 +254,18 @@ pub fn write_hotas_mappings() -> Result<String, String> {
             connected.contains(&(vid, pid)) && !registry_ids.contains(&(vid, pid))
         }).trim_end().to_string()
     };
-    // When the vJoy virtual throttle is ACTIVELY being fed it carries the combined
-    // throttle + rudder, so it becomes the sole Throttle device: write the vJoy block
-    // and SKIP the physical MRP (two Throttle devices would fight for MW5's one slot).
-    // When the feeder is off, do neither — so a vJoy install never breaks a normal setup.
+    // When the vJoy feeder is ACTIVE, the WHOLE MOZA rig is mirrored onto the one vJoy
+    // device (buttons + aim/look + throttle + rudder), so vJoy is the sole Joystick AND
+    // Throttle: write only the vJoy block and SKIP both physical MOZA devices (else they'd
+    // fight vJoy for MW5's slots, and the AB6's own block re-collapses its buttons).
+    // When the feeder is off, do none of this — a vJoy install never breaks a normal setup.
     let vjoy_active = crate::vjoy::is_active() && connected.contains(&(0x1234, 0xBEAD));
     for d in crate::devices::registry().iter().filter(|d| {
         !d.custom
             && (connected.is_empty() || connected.contains(&(d.vid, d.pid)))
             && !((d.vid, d.pid) == (0x1234, 0xBEAD) && !vjoy_active) // vJoy only when feeding it
-            && !((d.vid, d.pid) == (0x346E, 0x1200) && vjoy_active)  // skip MRP when vJoy has throttle
+            && !((d.vid, d.pid) == (0x346E, 0x1200) && vjoy_active)  // skip MRP pedals when vJoy carries them
+            && !((d.vid, d.pid) == (0x346E, 0x1002) && vjoy_active)  // skip AB6 stick when vJoy carries it
     }) {
         append_block(&mut out, &device_block(d));
     }

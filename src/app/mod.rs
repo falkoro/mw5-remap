@@ -192,13 +192,23 @@ impl eframe::App for App {
             .filter_map(|b| actions.iter().find(|a| a.id == b.id).map(|a| (b.token.clone(), a.label.clone())))
             .collect();
 
-        // Feed the COMBINED toe-throttle + rudder into vJoy device 1 each frame (if on),
-        // so any game binds ONE clean bipolar throttle axis (centre=stop, right toe=forward,
-        // left toe=reverse) instead of two unipolar toes. MRP toes = Ry(fwd)/Rx(rev), rudder = Rz.
+        // vJoy mode (evilC approach): mirror the whole MOZA rig onto ONE clean vJoy device
+        // each frame, so MW5 reads a tidy 20-button / 6-axis stick instead of the 128-button
+        // AB6 (which MW5 collapses to "Button 1"). AB6 -> buttons 1-20 + gimbal (aim) + thumb
+        // hat (look); MRP -> combined bipolar throttle (Z) + rudder (Rz). The .Remap maps this
+        // single vJoy device to BOTH the Joystick and Throttle roles.
         if *vjoy_enabled {
+            use crate::vjoy::{combine_toes, feed, feed_button, scale, HID_RX, HID_RY, HID_RZ, HID_X, HID_Y, HID_Z};
+            if let Some(ab6) = devices.iter().find(|d| (d.vid, d.pid) == (0x346E, 0x1002)) {
+                for b in 0..20u8 { feed_button(b + 1, ab6.buttons & (1 << b) != 0); }
+                feed(HID_X, scale(ab6.axes[0])); // gimbal X -> Joystick_Axis1 (aim)
+                feed(HID_Y, scale(ab6.axes[1])); // gimbal Y -> Joystick_Axis2 (aim)
+                feed(HID_RX, scale(ab6.axes[3])); // thumb hat Rx -> Joystick_Axis4 (look)
+                feed(HID_RY, scale(ab6.axes[4])); // thumb hat Ry -> Joystick_Axis5 (look)
+            }
             if let Some(mrp) = devices.iter().find(|d| (d.vid, d.pid) == (0x346E, 0x1200)) {
-                crate::vjoy::feed(crate::vjoy::HID_X, crate::vjoy::combine_toes(mrp.axes[4], mrp.axes[3]));
-                crate::vjoy::feed(crate::vjoy::HID_RZ, crate::vjoy::scale(mrp.axes[5]));
+                feed(HID_Z, combine_toes(mrp.axes[4], mrp.axes[3])); // throttle -> Throttle_Axis2
+                feed(HID_RZ, scale(mrp.axes[5])); // rudder -> Throttle_Axis1
             }
         }
 

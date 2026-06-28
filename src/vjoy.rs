@@ -23,8 +23,12 @@ extern "system" {
 
 fn wide(s: &str) -> Vec<u16> { s.encode_utf16().chain(std::iter::once(0)).collect() }
 
-/// HID usage ids for axes (Y=0x31, Z=0x32, RX=0x33, RY=0x34, SL0=0x36).
+/// HID usage ids for the vJoy axes.
 pub const HID_X: u32 = 0x30;
+pub const HID_Y: u32 = 0x31;
+pub const HID_Z: u32 = 0x32;
+pub const HID_RX: u32 = 0x33;
+pub const HID_RY: u32 = 0x34;
 pub const HID_RZ: u32 = 0x35;
 /// vJoy axis values run 1..=32768; centre is 16384.
 pub const VJOY_MAX: i32 = 32768;
@@ -38,12 +42,14 @@ type FnEnabled = unsafe extern "C" fn() -> i32;
 type FnStatus = unsafe extern "C" fn(u32) -> i32; // 0=Own,1=Free,2=Busy,3=Miss,4=Unknown
 type FnAcquire = unsafe extern "C" fn(u32) -> i32;
 type FnSetAxis = unsafe extern "C" fn(i32, u32, u32) -> i32;
+type FnSetBtn = unsafe extern "C" fn(i32, u32, u8) -> i32; // (value, rID, nBtn 1-based)
 
 struct Api {
     enabled: FnEnabled,
     status: FnStatus,
     acquire: FnAcquire,
     set_axis: FnSetAxis,
+    set_btn: FnSetBtn,
 }
 
 fn load_api() -> Option<Api> {
@@ -64,12 +70,14 @@ fn load_api() -> Option<Api> {
             GetProcAddress(h, c.as_ptr() as *const u8)
         };
         let (e, s, a, sa) = (get("vJoyEnabled"), get("GetVJDStatus"), get("AcquireVJD"), get("SetAxis"));
-        if e.is_null() || s.is_null() || a.is_null() || sa.is_null() { return None; }
+        let sb = get("SetBtn");
+        if e.is_null() || s.is_null() || a.is_null() || sa.is_null() || sb.is_null() { return None; }
         Some(Api {
             enabled: std::mem::transmute::<FarProc, FnEnabled>(e),
             status: std::mem::transmute::<FarProc, FnStatus>(s),
             acquire: std::mem::transmute::<FarProc, FnAcquire>(a),
             set_axis: std::mem::transmute::<FarProc, FnSetAxis>(sa),
+            set_btn: std::mem::transmute::<FarProc, FnSetBtn>(sb),
         })
     }
 }
@@ -120,6 +128,19 @@ pub fn feed(usage: u32, value: i32) -> bool {
             if !fd.acquired { return false; }
         }
         (fd.api.set_axis)(value.clamp(1, VJOY_MAX), fd.rid, usage) != 0
+    }, false)
+}
+
+/// Set vJoy device-1 button `btn` (1-based) pressed/released. Acquires if needed.
+pub fn feed_button(btn: u8, pressed: bool) -> bool {
+    with_feeder(|fd| unsafe {
+        if (fd.api.enabled)() == 0 { return false; }
+        if !fd.acquired {
+            let st = (fd.api.status)(fd.rid);
+            if st == 0 || st == 1 { fd.acquired = (fd.api.acquire)(fd.rid) != 0; }
+            if !fd.acquired { return false; }
+        }
+        (fd.api.set_btn)(if pressed { 1 } else { 0 }, fd.rid, btn) != 0
     }, false)
 }
 
