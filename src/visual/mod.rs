@@ -183,6 +183,33 @@ pub fn hot_tokens(devices: &[Device], p: &dyn GameProvider) -> Vec<String> {
     hot
 }
 
+/// Live raw-axis readout: one bar per axis per device showing the actual winmm
+/// value (0..65535) and the token it binds to. Always shows all six winmm slots
+/// [X Y Z R U V] so devices with gaps (the MRP uses X/Y/R) still read correctly —
+/// the unused slots simply sit at 0. This is the ground-truth "is the tool seeing
+/// my axis" display; it ignores deadzones/bindings entirely.
+fn live_axes(ui: &mut egui::Ui, devices: &[Device], p: &dyn GameProvider) {
+    const NAMES: [&str; 6] = ["X", "Y", "Z", "R", "U", "V"];
+    if devices.is_empty() {
+        ui.label(egui::RichText::new("no joysticks detected").weak());
+        return;
+    }
+    for (di, d) in devices.iter().enumerate() {
+        ui.label(egui::RichText::new(&d.name).strong().small());
+        for i in 0..6 {
+            let v = d.axes[i];
+            let tok = p.axis_token(d, i, di).unwrap_or_default();
+            let tok = tok.strip_prefix("Joystick_").or_else(|| tok.strip_prefix("Throttle_")).unwrap_or(&tok);
+            let label = if tok.is_empty() { NAMES[i].to_string() } else { format!("{} ({})", NAMES[i], tok) };
+            let w = ui.available_width().min(360.0);
+            ui.add(egui::ProgressBar::new(v as f32 / 65535.0)
+                .desired_width(w)
+                .text(egui::RichText::new(format!("{label}  {v}")).small()));
+        }
+        ui.add_space(3.0);
+    }
+}
+
 /// Draw a captioned image at width `w` with optional callouts laid over it.
 #[allow(clippy::too_many_arguments)]
 fn image_block(
@@ -243,6 +270,13 @@ pub fn sidebar(
             }
         });
     }
+    // Raw axis readout: the actual winmm value of every axis on every device, each
+    // labelled with the Joystick/Throttle token it binds to. Binding-independent —
+    // if a bar moves, the tool is reading that axis (and you can see which token to
+    // bind). If it doesn't move, winmm itself isn't seeing it.
+    egui::CollapsingHeader::new("Live axes (raw)").default_open(true).show(ui, |ui| {
+        live_axes(ui, devices, p);
+    });
     ui.separator();
 
     let oct = ab6_octant(devices);
