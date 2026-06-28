@@ -10,6 +10,7 @@ mod export;
 mod games;
 mod hidhide;
 mod input;
+mod profiles;
 mod sys;
 mod update;
 mod visual;

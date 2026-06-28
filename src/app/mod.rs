@@ -38,6 +38,8 @@ pub struct App {
     pending_export: Option<ExportOpts>, // set when Export clicked; consumed when the screenshot arrives
     export_shot_sent: bool,             // true once the Screenshot cmd is issued (so the filtered frame paints first)
     last_panel_rect: egui::Rect,        // screen rect of the device SidePanel, captured during render
+    profile: String,                    // currently selected binding profile (default: App Defaults)
+    profile_input: String,              // "new profile name" text field
 }
 
 impl App {
@@ -77,6 +79,8 @@ impl App {
             pending_export: None,
             export_shot_sent: false,
             last_panel_rect: egui::Rect::NOTHING,
+            profile: crate::profiles::APP_DEFAULTS.to_string(),
+            profile_input: String::new(),
         };
         app.load_selected();
         app.crash_recover();
@@ -177,7 +181,7 @@ impl eframe::App for App {
             }
         }
 
-        let App { games, selected, actions, rows, devices, capture, status, elevated, hidden, hide_state, textures, show_labels, update, show_export_dialog, export_opts, pending_export, export_shot_sent, last_panel_rect } = self;
+        let App { games, selected, actions, rows, devices, capture, status, elevated, hidden, hide_state, textures, show_labels, update, show_export_dialog, export_opts, pending_export, export_shot_sent, last_panel_rect, profile, profile_input } = self;
 
         // token -> bound action label, so the device diagram can show WHAT is bound
         // to each control (not just the control's name).
@@ -187,7 +191,7 @@ impl eframe::App for App {
             .collect();
 
         panels::update_banner(ctx, status, update);
-        let reload = toolbar::top_bar(ctx, games, selected, rows, actions, status, *elevated, hidden, hide_state, show_export_dialog);
+        let reload = toolbar::top_bar(ctx, games, selected, rows, actions, status, *elevated, hidden, hide_state, show_export_dialog, profile, profile_input);
 
         egui::SidePanel::left("devices").resizable(true).default_width(440.0).show(ctx, |ui| {
             *last_panel_rect = ui.max_rect();

@@ -23,6 +23,8 @@ pub(super) fn top_bar(
     hidden: &mut Vec<String>,
     hide_state: &PathBuf,
     show_export_dialog: &mut bool,
+    profile: &mut String,
+    profile_input: &mut String,
 ) -> bool {
     let mut reload = false;
     egui::TopBottomPanel::top("top").show(ctx, |ui| {
@@ -42,19 +44,45 @@ pub(super) fn top_bar(
             let avail = games[*selected].available();
             ui.separator();
             if ui.add_enabled(avail, egui::Button::new("⟳ Load current")).clicked() { reload = true; }
-            if ui.add_enabled(avail, egui::Button::new("↺ Reset to defaults"))
-                .on_hover_text("Replace the grid with the known-good default layout. Not saved until you click 💾 Save to game.")
-                .clicked()
-            {
-                let defaults: std::collections::HashMap<String, (String, f32)> = games[*selected]
-                    .default_bindings().into_iter().map(|b| (b.id, (b.token, b.scale))).collect();
-                for r in rows.iter_mut() {
-                    match defaults.get(&r.id) {
-                        Some((tok, sc)) => { r.token = tok.clone(); r.scale = *sc; }
-                        None => { r.token.clear(); r.scale = 1.0; }
-                    }
+
+            // Profiles: pick the built-in "App Defaults" (= reset) or a saved layout to
+            // fill the grid, save the current grid as a named profile, or delete one.
+            // Loading only fills the grid — 💾 Save to game still writes it.
+            let game_name = games[*selected].name().to_string();
+            ui.label("Profile:");
+            let mut pick = profile.clone();
+            egui::ComboBox::from_id_salt("profile").selected_text(profile.as_str()).show_ui(ui, |ui| {
+                ui.selectable_value(&mut pick, crate::profiles::APP_DEFAULTS.to_string(), crate::profiles::APP_DEFAULTS);
+                for name in crate::profiles::list(&game_name) {
+                    ui.selectable_value(&mut pick, name.clone(), name);
                 }
-                *status = "Reset to the default layout — review it, then click 💾 Save to game.".into();
+            });
+            if avail && pick != *profile {
+                *profile = pick.clone();
+                let from = if pick == crate::profiles::APP_DEFAULTS {
+                    games[*selected].default_bindings()
+                } else {
+                    crate::profiles::load(&game_name, &pick).unwrap_or_default()
+                };
+                crate::profiles::apply(rows, &from);
+                *status = format!("Loaded profile \"{pick}\" — review, then 💾 Save to game.");
+            }
+            ui.add(egui::TextEdit::singleline(profile_input).hint_text("new profile name").desired_width(110.0));
+            if ui.add_enabled(avail, egui::Button::new("💾 Save as"))
+                .on_hover_text("Save the current grid as a named profile (shareable text file)").clicked()
+            {
+                match crate::profiles::save(&game_name, profile_input, rows) {
+                    Ok(()) => { *profile = crate::profiles::safe_name(profile_input); *status = format!("Saved profile \"{}\".", profile); profile_input.clear(); }
+                    Err(e) => *status = e,
+                }
+            }
+            if avail && *profile != crate::profiles::APP_DEFAULTS
+                && ui.button("🗑").on_hover_text("Delete the selected profile").clicked()
+            {
+                match crate::profiles::delete(&game_name, profile) {
+                    Ok(()) => { *status = format!("Deleted profile \"{}\".", profile); *profile = crate::profiles::APP_DEFAULTS.to_string(); }
+                    Err(e) => *status = e,
+                }
             }
             if ui.add_enabled(avail, egui::Button::new("💾 Save to game")).clicked() {
                 let p = games[*selected].as_ref();
