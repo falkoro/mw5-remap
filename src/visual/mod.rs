@@ -58,7 +58,10 @@ const MHG_MARKERS: &[Marker] = &[
     m(0.465, 0.295, "", "Hat ↙", "Joystick_Hat_6"),
     m(0.445, 0.270, "", "Hat ←", "Joystick_Hat_7"),
     m(0.465, 0.245, "", "Hat ↖", "Joystick_Hat_8"),
-    m(0.645, 0.215, "", "Thumb hat (analog → look)", "Joystick_Axis4"),
+    // Analog thumb / POV hat = two axes: winmm U(4) = vertical, V(5) = horizontal.
+    // Two markers so BOTH directions light when you sweep it.
+    m(0.645, 0.215, "", "Thumb/POV hat ↕ (look)", "Joystick_Axis4"),
+    m(0.672, 0.232, "", "Thumb/POV hat ↔ (look)", "Joystick_Axis5"),
     // Buttons show the bound action ("Trigger · Fire Weapon Group 1"). The button
     // NUMBER per physical control is firmware-dependent, so these follow the app's
     // default layout (Button1..6 = fire groups) — press one to confirm via the live
@@ -120,20 +123,30 @@ fn disp_size(tex: &egui::TextureHandle, w: f32) -> egui::Vec2 {
 /// A MOZA axis is "engaged": centered axes (aim, rudder) when pushed off centre;
 /// the toe-throttle (rests at 0) when pressed in. Indices match games::mw5 .Remap.
 fn axis_deflected(devices: &[Device], token: &str) -> bool {
-    let (id, idx, centered) = match token {
-        "Joystick_Axis1" => (AB6, 1, true),  // HOTAS_YAxis (gimbal pitch)
-        "Joystick_Axis2" => (AB6, 0, true),  // HOTAS_XAxis (gimbal roll)
-        "Joystick_Axis4" => (AB6, 4, true),  // HOTAS_UAxis (analog thumb hat)
-        "Joystick_Axis5" => (AB6, 5, true),  // HOTAS_VAxis (analog thumb hat)
-        "Throttle_Axis1" => (MRP, 3, true),  // HOTAS_RZAxis (rudder)
-        "Throttle_Axis2" => (MRP, 0, false), // right toe (winmm X, rests at 0)
+    // The throttle (Throttle_Axis2) is driven by BOTH toe brakes — confirmed live on
+    // this MRP: right toe = winmm X(0), left toe = winmm Y(1), BOTH centred ~32767.
+    // Either toe pushed off centre = engaged (so the left toe lights it, not just X).
+    if token == "Throttle_Axis2" {
+        return match devices.iter().find(|d| (d.vid, d.pid) == MRP) {
+            Some(d) => {
+                let x = d.axes.first().copied().unwrap_or(32767) as i32;
+                let y = d.axes.get(1).copied().unwrap_or(32767) as i32;
+                (x - 32767).abs() > 9000 || (y - 32767).abs() > 9000
+            }
+            None => false,
+        };
+    }
+    let (id, idx) = match token {
+        "Joystick_Axis1" => (AB6, 1), // HOTAS_YAxis (gimbal pitch)
+        "Joystick_Axis2" => (AB6, 0), // HOTAS_XAxis (gimbal roll)
+        "Joystick_Axis4" => (AB6, 4), // U axis (analog thumb / POV hat, vertical)
+        "Joystick_Axis5" => (AB6, 5), // V axis (analog thumb / POV hat, horizontal)
+        "Throttle_Axis1" => (MRP, 3), // HOTAS_RZAxis (rudder)
         _ => return false,
     };
+    // every remaining mapped axis is centred ~32767; engaged when pushed past ~14%.
     match devices.iter().find(|d| (d.vid, d.pid) == id) {
-        Some(d) => {
-            let v = d.axes.get(idx).copied().unwrap_or(32767) as i32;
-            if centered { (v - 32767).abs() > 9000 } else { v > 12000 }
-        }
+        Some(d) => ((d.axes.get(idx).copied().unwrap_or(32767) as i32) - 32767).abs() > 9000,
         None => false,
     }
 }
