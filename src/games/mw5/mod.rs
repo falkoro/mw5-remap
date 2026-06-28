@@ -197,11 +197,23 @@ impl GameProvider for Mw5 {
                 let n = match axis_index {
                     1 => 1, // Y gimbal -> pitch
                     0 => 2, // X gimbal -> roll
-                    4 => 4, // U thumb-hat
-                    5 => 5, // V thumb-hat
+                    4 => 4, // U thumb-hat / POV  -> Joystick_Axis4
+                    5 => 5, // V thumb-hat / POV  -> Joystick_Axis5
                     other => other + 1,
                 };
                 Some(format!("Joystick_Axis{n}"))
+            }
+            // MRP pedals: the .Remap routes BOTH toes (winmm X/Y) to Throttle_Axis2
+            // (the bipolar throttle; left toe is the reverse half) and the rudder
+            // swing-arm (winmm R) to Throttle_Axis1. Capture must produce the SAME
+            // tokens or a press-to-bind lands on a slot that does nothing in-game.
+            Role::Throttle if (dev.vid, dev.pid) == PEDALS => {
+                let n = match axis_index {
+                    0 | 1 => 2, // right/left toe -> throttle (fwd / reverse)
+                    3 => 1,     // rudder swing-arm -> leg turn
+                    other => other + 1,
+                };
+                Some(format!("Throttle_Axis{n}"))
             }
             r => Some(format!("{}_Axis{}", r.label(), axis_index + 1)),
         }

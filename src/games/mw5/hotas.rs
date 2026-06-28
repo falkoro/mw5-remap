@@ -137,13 +137,14 @@ fn device_block(d: &crate::devices::KnownDevice) -> String {
             ));
         }
     }
-    // MHG analog thumb hat (Hall-effect): confirmed live to be winmm axes U and V —
-    // two extra CENTRED proportional axes for smooth look. Routed to spare Joystick
-    // axis slots so they can be bound to look. InAxis names are a best guess for U/V
-    // on the HOTAS device — if look doesn't move in-game, try HOTAS_Slider1/Slider2.
+    // MHG analog thumb hat / POV (Hall-effect): confirmed live to be winmm axes U
+    // and V — two extra CENTRED proportional axes for smooth look. winmm U/V are
+    // DirectInput SLIDER axes, so MW5 names them HOTAS_Slider1/HOTAS_Slider2 (NOT
+    // HOTAS_UAxis/VAxis, which aren't valid InAxis names — that's why look did
+    // nothing before). Routed to spare Joystick axis slots so they bind to look.
     if (d.vid, d.pid) == (0x346E, 0x1002) {
-        s.push_str("AXIS: InAxis=HOTAS_UAxis, OutAxis=Joystick_Axis4, Invert=FALSE, Offset=-0.5, DeadZoneMin=-0.05, DeadZoneMax=0.05, MapToDeadZone=TRUE\r\n");
-        s.push_str("AXIS: InAxis=HOTAS_VAxis, OutAxis=Joystick_Axis5, Invert=FALSE, Offset=-0.5, DeadZoneMin=-0.05, DeadZoneMax=0.05, MapToDeadZone=TRUE\r\n");
+        s.push_str("AXIS: InAxis=HOTAS_Slider1, OutAxis=Joystick_Axis4, Invert=FALSE, Offset=-0.5, DeadZoneMin=-0.05, DeadZoneMax=0.05, MapToDeadZone=TRUE\r\n");
+        s.push_str("AXIS: InAxis=HOTAS_Slider2, OutAxis=Joystick_Axis5, Invert=FALSE, Offset=-0.5, DeadZoneMin=-0.05, DeadZoneMax=0.05, MapToDeadZone=TRUE\r\n");
     }
     s
 }
