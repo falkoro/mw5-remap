@@ -106,10 +106,10 @@ pub(super) fn default_bindings() -> Vec<Binding> {
         b("JoystickLookVertical@Joystick_Hat_5", "Joystick_Hat_5", -2.0),  // down
         b("JoystickLookHorizontal@Joystick_Hat_3", "Joystick_Hat_3", 3.0), // right
         b("JoystickLookHorizontal@Joystick_Hat_7", "Joystick_Hat_7", -3.0),// left
-        // analog thumb/POV hat (Rx/Ry) -> smooth look. INVERTED (negative scale) so
-        // the look matches the hat direction the user expects.
+        // analog thumb/POV hat (Rx/Ry) -> smooth look. Vertical (up/down) is INVERTED
+        // (negative) per the user; horizontal (left/right) stays NORMAL (positive).
         b("JoystickLookVertical@Joystick_Axis4", "Joystick_Axis4", -2.0),
-        b("JoystickLookHorizontal@Joystick_Axis5", "Joystick_Axis5", -3.0),
+        b("JoystickLookHorizontal@Joystick_Axis5", "Joystick_Axis5", 3.0),
         // MOZA MRP pedals (Throttle role): RIGHT toe = move forward (the throttle
         // axis), rudder swing-arm = turn the legs. The right toe rests at 0 and
         // presses to max -> JoystickThrottle goes 0..forward (offset 0 in .Remap).

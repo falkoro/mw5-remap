@@ -103,11 +103,11 @@ fn mrp_pedal_block() -> String {
     // rudder swing-arm (Rz, centred) -> leg turn
     s.push_str("AXIS: InAxis=HOTAS_RZAxis, OutAxis=Throttle_Axis1, Invert=FALSE, Offset=-0.5, DeadZoneMin=-0.05, DeadZoneMax=0.05, MapToDeadZone=TRUE\r\n");
     // RIGHT toe ONLY -> forward throttle. MW5 reads only ONE axis line per OutAxis (it
-    // does NOT sum two toes), and treats Throttle_Axis2 as bipolar (-1..1, centre=stop),
-    // so a toe resting at raw 0 normalises to -1 = full reverse (the "constant backward"
-    // bug). Offset=+1.0 shifts rest to 0 (stop); pressing drives forward. Reverse lives
-    // on a button (ThrottleDecrease) since two unipolar toes can't drive one bipolar axis.
-    s.push_str("AXIS: InAxis=GenericUSBController_Axis1, OutAxis=Throttle_Axis2, Invert=FALSE, Offset=1.0, DeadZoneMin=-0.05, DeadZoneMax=0.05, MapToDeadZone=FALSE\r\n");
+    // does NOT sum two toes). The toe normalises 0..1 (rest=0, press=1) — verified live:
+    // Offset=-1.0 pinned it backward, Offset=+1.0 pinned it FORWARD, so the neutral
+    // Offset is 0.0 = rest at stop, press drives forward. Reverse lives on a button
+    // (ThrottleDecrease) since two unipolar toes can't drive one bipolar axis.
+    s.push_str("AXIS: InAxis=GenericUSBController_Axis1, OutAxis=Throttle_Axis2, Invert=FALSE, Offset=0.0, DeadZoneMin=-0.05, DeadZoneMax=0.05, MapToDeadZone=TRUE\r\n");
     s
 }
 
