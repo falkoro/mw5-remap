@@ -102,14 +102,12 @@ fn mrp_pedal_block() -> String {
     let mut s = String::from("START_BIND\r\nNAME: MOZA MRP Rudder Pedals\r\nVID: 0x346E\r\nPID: 0x1200\r\n");
     // rudder swing-arm (Rz, centred) -> leg turn
     s.push_str("AXIS: InAxis=HOTAS_RZAxis, OutAxis=Throttle_Axis1, Invert=FALSE, Offset=-0.5, DeadZoneMin=-0.05, DeadZoneMax=0.05, MapToDeadZone=TRUE\r\n");
-    // RIGHT toe ONLY -> forward throttle. The toe is the Rx axis (Windows shows it as
-    // X-Rotation; in Live axes it reads on Throttle_Axis2). The previous
-    // GenericUSBController_Axis1 grabbed the WRONG physical axis (the centred rudder),
-    // which kept driving the throttle. Name it directly as HOTAS_RXAxis — the same way
-    // the rudder works as HOTAS_RZAxis. The toe rests LOW, so deadzone the whole bottom
-    // (DeadZoneMin=-1.0 .. 0.15, MapToDeadZone=TRUE) => rest = stop, press = forward.
-    // Reverse is on a button (ThrottleDecrease).
-    s.push_str("AXIS: InAxis=HOTAS_RXAxis, OutAxis=Throttle_Axis2, Invert=FALSE, Offset=0.0, DeadZoneMin=-1.0, DeadZoneMax=0.15, MapToDeadZone=TRUE\r\n");
+    // RESTORED from v0.3.7 (the user's known-good). BOTH toes drive the bipolar throttle
+    // via two lines onto Throttle_Axis2 — their resting values cancel to 0 (stop), right
+    // toe = forward half, left toe = reverse half. (Later single-line/HOTAS_RXAxis edits
+    // broke it: HOTAS_RXAxis does nothing in-game, a single line crawled.)
+    s.push_str("AXIS: InAxis=GenericUSBController_Axis1, OutAxis=Throttle_Axis2, Invert=FALSE, Offset=-1.0, DeadZoneMin=-0.1, DeadZoneMax=0.1, MapToDeadZone=FALSE\r\n");
+    s.push_str("AXIS: InAxis=GenericUSBController_Axis2, OutAxis=Throttle_Axis2, Invert=TRUE, Offset=1.0, DeadZoneMin=-0.1, DeadZoneMax=0.1, MapToDeadZone=FALSE\r\n");
     s
 }
 
