@@ -56,6 +56,23 @@ across MW5/AC7/SC like the MOZA gear. Use the `add-joystick` skill.
 strip/retain/producible-tokens/**no-orphans**, parse read_buttons/set_action, export). Add more as
 features land. The `no_orphan_default_bindings` test is the guard against dead bindings.
 
+### ☀️ MORNING PLAN (vJoy route — the pipeline is PROVEN working, v0.4.5)
+`--vjoyverify` confirmed end-to-end: feed buttons/axes to vJoy device 1 → read them back
+through our own DirectInput → PASS. So the feeder + our button reading both work; the only
+thing left is the MW5-side setup. Do these IN ORDER:
+1. **Launch the app v0.4.5** (it kills any old instance). 
+2. Click **`🕹 vJoy mode`** → ON.  (If it's greyed out: vJoy device 1 is BUSY — close any
+   other app that owns it, e.g. an old MW5-Remap or Joystick Gremlin.)
+3. **💾 Save to game** → writes the vJoy-only `.Remap` (skips the MOZA blocks) + bindings.
+4. **HidHide**: HIDE the **MOZA AB6 (346E:1002) + MRP (346E:1200)** from MW5 so MW5 sees
+   ONLY the vJoy device — AND keep **MW5-Remap.exe whitelisted** so the app can still read
+   the MOZA to feed vJoy. (Whitelisting alone isn't enough; the MOZA must be HIDDEN too.)
+5. **Keep the app OPEN** while playing (it feeds vJoy every 30 ms).
+6. MW5 → **Settings: Control Mode = Classic/Mech** (not Modernize) + **Sensitivity sliders > 0**.
+7. Verify live without MW5: Windows "Set up USB game controllers → vJoy Device → Test" →
+   press AB6 buttons → vJoy buttons light up. If they do, MW5 will work.
+Debug tool if stuck: close the app, run `MW5-Remap.exe --vjoyverify` (round-trip self-test).
+
 ### ★ BUTTON BREAKTHROUGH (2026-06-28) — what actually works
 After a long debug with the user live, the working MW5 setup for the MOZA rig is:
 - **`.Remap` = a Joystick-role block whose VID/PID does NOT match the AB6** (e.g. the stock
