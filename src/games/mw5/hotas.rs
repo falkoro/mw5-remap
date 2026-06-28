@@ -129,12 +129,13 @@ fn mrp_pedal_block() -> String {
     let mut s = String::from("START_BIND\r\nNAME: MOZA MRP Rudder Pedals\r\nVID: 0x346E\r\nPID: 0x1200\r\n");
     // rudder swing-arm (Rz, centred) -> leg turn
     s.push_str("AXIS: InAxis=HOTAS_RZAxis, OutAxis=Throttle_Axis1, Invert=FALSE, Offset=-0.5, DeadZoneMin=-0.05, DeadZoneMax=0.05, MapToDeadZone=TRUE\r\n");
-    // RESTORED from v0.3.7 (the user's known-good). BOTH toes drive the bipolar throttle
-    // via two lines onto Throttle_Axis2 — their resting values cancel to 0 (stop), right
-    // toe = forward half, left toe = reverse half. (Later single-line/HOTAS_RXAxis edits
-    // broke it: HOTAS_RXAxis does nothing in-game, a single line crawled.)
-    s.push_str("AXIS: InAxis=GenericUSBController_Axis1, OutAxis=Throttle_Axis2, Invert=FALSE, Offset=-1.0, DeadZoneMin=-0.1, DeadZoneMax=0.1, MapToDeadZone=FALSE\r\n");
-    s.push_str("AXIS: InAxis=GenericUSBController_Axis2, OutAxis=Throttle_Axis2, Invert=TRUE, Offset=1.0, DeadZoneMin=-0.1, DeadZoneMax=0.1, MapToDeadZone=FALSE\r\n");
+    // RIGHT toe -> forward only (GenericUSBController_Axis1 works in-game; HOTAS_RXAxis is
+    // inert). The two-toe summing trick crawled backward (MW5 honours the first line, whose
+    // resting value is full reverse). Instead: the toe rests at the LOW end, so DEADZONE the
+    // whole bottom (DeadZoneMin=-1.0 .. DeadZoneMax=0.15, MapToDeadZone=TRUE, Offset=0.0) so
+    // rest = STOP whether MW5 maps the axis 0..1 (rest 0) or -1..1 (rest -1, still inside the
+    // deadzone) — no crawl either way. Pressing past ~15% ramps forward. Reverse = button 3.
+    s.push_str("AXIS: InAxis=GenericUSBController_Axis1, OutAxis=Throttle_Axis2, Invert=FALSE, Offset=0.0, DeadZoneMin=-1.0, DeadZoneMax=0.15, MapToDeadZone=TRUE\r\n");
     s
 }
 
