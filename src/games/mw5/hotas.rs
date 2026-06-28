@@ -138,10 +138,22 @@ fn mrp_pedal_block() -> String {
     s
 }
 
+/// vJoy device (fed by our combiner): X = combined BIPOLAR throttle (centre=stop),
+/// RZ = rudder passthrough. Both are CENTRED axes, so Offset=-0.5 (unlike a raw toe).
+/// This makes vJoy the single clean Throttle device — the MRP block is skipped when
+/// vJoy is connected (see write_hotas_mappings), so the two don't fight for the slot.
+fn vjoy_block() -> String {
+    let mut s = String::from("START_BIND\r\nNAME: vJoy Device\r\nVID: 0x1234\r\nPID: 0xBEAD\r\n");
+    s.push_str("AXIS: InAxis=HOTAS_XAxis, OutAxis=Throttle_Axis2, Invert=FALSE, Offset=-0.5, DeadZoneMin=-0.05, DeadZoneMax=0.05, MapToDeadZone=TRUE\r\n");
+    s.push_str("AXIS: InAxis=HOTAS_RZAxis, OutAxis=Throttle_Axis1, Invert=FALSE, Offset=-0.5, DeadZoneMin=-0.05, DeadZoneMax=0.05, MapToDeadZone=TRUE\r\n");
+    s
+}
+
 /// Build one START_BIND block for a known device (buttons capped at MW5's 20,
 /// hat -> Hat_1..8, axes -> the role's tokens; throttle axes aren't centered).
 fn device_block(d: &crate::devices::KnownDevice) -> String {
     if (d.vid, d.pid) == (0x346E, 0x1200) { return mrp_pedal_block(); }
+    if (d.vid, d.pid) == (0x1234, 0xBEAD) { return vjoy_block(); }
     let role = d.role.label(); // "Joystick" | "Throttle"
     let mut s = String::new();
     s.push_str("START_BIND\r\n");
@@ -178,6 +190,25 @@ fn device_block(d: &crate::devices::KnownDevice) -> String {
         s.push_str("AXIS: InAxis=GenericUSBController_Axis5, OutAxis=Joystick_Axis5, Invert=FALSE, Offset=-0.5, DeadZoneMin=-0.05, DeadZoneMax=0.05, MapToDeadZone=TRUE\r\n");
     }
     s
+}
+
+/// Every OutButton/OutAxis token that some known device's .Remap block can PRODUCE.
+/// The selftest checks each default binding against this, to catch a binding pointed
+/// at a token that no physical control feeds (the "mapped in-game but dead" bug).
+pub fn producible_tokens() -> std::collections::HashSet<String> {
+    let mut out = std::collections::HashSet::new();
+    for d in crate::devices::registry().iter().filter(|d| !d.custom) {
+        for line in device_block(d).lines() {
+            for key in ["OutButtons=", "OutAxis="] {
+                if let Some(i) = line.find(key) {
+                    let rest = &line[i + key.len()..];
+                    let end = rest.find([',', ' ', '\r', '\t']).unwrap_or(rest.len());
+                    out.insert(rest[..end].trim().to_string());
+                }
+            }
+        }
+    }
+    out
 }
 
 fn append_block(out: &mut String, blk: &str) {
@@ -220,9 +251,17 @@ pub fn write_hotas_mappings() -> Result<String, String> {
             connected.contains(&(vid, pid)) && !registry_ids.contains(&(vid, pid))
         }).trim_end().to_string()
     };
-    for d in crate::devices::registry().iter()
-        .filter(|d| !d.custom && (connected.is_empty() || connected.contains(&(d.vid, d.pid))))
-    {
+    // When the vJoy virtual throttle is ACTIVELY being fed it carries the combined
+    // throttle + rudder, so it becomes the sole Throttle device: write the vJoy block
+    // and SKIP the physical MRP (two Throttle devices would fight for MW5's one slot).
+    // When the feeder is off, do neither — so a vJoy install never breaks a normal setup.
+    let vjoy_active = crate::vjoy::is_active() && connected.contains(&(0x1234, 0xBEAD));
+    for d in crate::devices::registry().iter().filter(|d| {
+        !d.custom
+            && (connected.is_empty() || connected.contains(&(d.vid, d.pid)))
+            && !((d.vid, d.pid) == (0x1234, 0xBEAD) && !vjoy_active) // vJoy only when feeding it
+            && !((d.vid, d.pid) == (0x346E, 0x1200) && vjoy_active)  // skip MRP when vJoy has throttle
+    }) {
         append_block(&mut out, &device_block(d));
     }
 

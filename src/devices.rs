@@ -50,12 +50,16 @@ const WH_STICK_AXES: &[AxisMap] = &[ax(Pitch, "HOTAS_YAxis", "Y", true), ax(Roll
 const WH_THR_AXES: &[AxisMap] = &[ax(Throttle, "HOTAS_ZAxis", "Z", false)];
 // Custom pedal template: assume a single self-centering rudder axis = yaw/turn.
 const CUSTOM_AXES: &[AxisMap] = &[ax(Yaw, "HOTAS_RZAxis", "Rz", false)];
+// vJoy virtual device, fed by the app's combiner: X = combined bipolar throttle
+// (centre=stop), RZ = rudder passthrough. (The .Remap uses a special centred block.)
+const VJOY_AXES: &[AxisMap] = &[ax(Throttle, "HOTAS_XAxis", "X", false), ax(Yaw, "HOTAS_RZAxis", "Rz", false)];
 
 const REGISTRY: &[KnownDevice] = &[
     KnownDevice { name: "MOZA AB6 FFB Base", vid: 0x346E, pid: 0x1002, role: Role::Joystick, buttons: 32, has_hat: true, axes: AB6_AXES, custom: false },
     KnownDevice { name: "MOZA MRP Rudder Pedals", vid: 0x346E, pid: 0x1200, role: Role::Throttle, buttons: 0, has_hat: false, axes: MRP_AXES, custom: false },
     KnownDevice { name: "Thrustmaster Warthog Joystick", vid: 0x044F, pid: 0x0402, role: Role::Joystick, buttons: 19, has_hat: true, axes: WH_STICK_AXES, custom: false },
     KnownDevice { name: "Thrustmaster Warthog Throttle", vid: 0x044F, pid: 0x0404, role: Role::Throttle, buttons: 19, has_hat: false, axes: WH_THR_AXES, custom: false },
+    KnownDevice { name: "vJoy Device", vid: 0x1234, pid: 0xBEAD, role: Role::Throttle, buttons: 0, has_hat: false, axes: VJOY_AXES, custom: false },
     KnownDevice { name: "Custom Pedal (edit IDs)", vid: 0x0000, pid: 0x0000, role: Role::Throttle, buttons: 0, has_hat: false, axes: CUSTOM_AXES, custom: true },
 ];
 

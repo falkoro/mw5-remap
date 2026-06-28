@@ -14,6 +14,7 @@ mod profiles;
 mod sys;
 mod update;
 mod visual;
+mod vjoy;
 
 use eframe::egui;
 
@@ -41,6 +42,10 @@ fn main() -> eframe::Result<()> {
     }
     if std::env::args().any(|a| a == "--write-hotas") {
         cli::write_hotas();
+        return Ok(());
+    }
+    if std::env::args().any(|a| a == "--vjoytest") {
+        cli::vjoytest();
         return Ok(());
     }
     if std::env::args().any(|a| a == "--ac7-setup") {

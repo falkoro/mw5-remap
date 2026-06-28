@@ -47,6 +47,30 @@ pub fn monitor() {
     println!("\n== monitor done ==");
 }
 
+/// Verify the vJoy feeder FFI: sweep vJoy device-1 axis X centre -> forward -> reverse.
+/// Watch it in vJoyMonitor (or re-run --devices) to confirm the axis moves.
+pub fn vjoytest() {
+    use std::{thread::sleep, time::Duration};
+    println!("== vJoy feeder test ==");
+    if !crate::vjoy::available() {
+        println!("vJoy NOT available — is the driver installed & enabled? (vJoyInterface.dll not found / vJoyEnabled()=false)");
+        return;
+    }
+    let st = crate::vjoy::status();
+    let label = match st { 0 => "OWN (we hold it)", 1 => "FREE (acquirable)", 2 => "BUSY (another app owns it)", 3 => "MISS (device 1 not configured)", _ => "UNKNOWN" };
+    println!("vJoy driver enabled ✓   device-1 status = {st} ({label})");
+    // sanity: rest=centre, right toe full=forward, left toe full=reverse
+    println!("combine sanity: rest={}, right={}, left={}",
+        crate::vjoy::combine_toes(0, 0), crate::vjoy::combine_toes(65535, 0), crate::vjoy::combine_toes(0, 65535));
+    println!("sweeping device 1, axis X:");
+    for v in [crate::vjoy::VJOY_CENTRE, crate::vjoy::VJOY_MAX, 1, crate::vjoy::VJOY_CENTRE] {
+        let ok = crate::vjoy::feed_throttle(v);
+        println!("   SetAxis X = {v:5}  -> {}", if ok { "ok" } else { "FAILED (device 1 busy / not acquirable)" });
+        sleep(Duration::from_millis(500));
+    }
+    println!("Done. Re-run --devices (or open vJoyMonitor) to confirm vJoy X moved.");
+}
+
 /// Fill every UNBOUND action with the known-good default layout, then save.
 /// Non-destructive: anything already bound (e.g. your fire groups) is left alone.
 pub fn apply_defaults() {
@@ -265,8 +289,26 @@ pub fn selftest() {
     println!("keyboard FireWeaponGroup1 still One/LeftMouse: {kb_intact}");
     println!("Keyboard_Mouse + GamePad sections present: {sections_ok}");
 
-    let pass = round_trip && same_lines && one_map && kb_intact && sections_ok;
+    // mapping consistency: every default-bound token must be PRODUCIBLE by a device's
+    // .Remap block — else it's an orphan ("bound in-game but nothing feeds it", the
+    // exact class of bug behind the dead buttons / dead throttle).
+    println!("\n== Mapping consistency (default layout) ==");
+    let producible = games::mw5::producible_tokens();
+    let orphans: Vec<String> = mw5.default_bindings().into_iter()
+        .filter(|b| !b.token.is_empty() && !producible.contains(&b.token))
+        .map(|b| format!("{} -> {}", b.id, b.token))
+        .collect();
+    if orphans.is_empty() {
+        println!("every default binding maps to a producible token ✓");
+    } else {
+        println!("ORPHAN bindings (no device .Remap produces the token):");
+        for o in &orphans { println!("   {o}"); }
+    }
+    let no_orphans = orphans.is_empty();
+
+    let pass = round_trip && same_lines && one_map && kb_intact && sections_ok && no_orphans;
     println!("\nROUND-TRIP: {}", if round_trip { "PASS" } else { "FAIL" });
+    println!("MAPPING:    {}", if no_orphans { "PASS" } else { "FAIL" });
     println!("OVERALL:    {}", if pass { "PASS" } else { "FAIL" });
     let _ = std::fs::remove_file(&tmp);
 }

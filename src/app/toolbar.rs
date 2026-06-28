@@ -25,6 +25,7 @@ pub(super) fn top_bar(
     show_export_dialog: &mut bool,
     profile: &mut String,
     profile_input: &mut String,
+    vjoy_enabled: &mut bool,
 ) -> bool {
     let mut reload = false;
     egui::TopBottomPanel::top("top").show(ctx, |ui| {
@@ -133,6 +134,21 @@ pub(super) fn top_bar(
                         Err(e) => *status = format!("Lock toggle failed: {}", e),
                     }
                 }
+            }
+            // Virtual throttle (vJoy): combine the two toe pedals into ONE bipolar axis on
+            // vJoy device 1, fed live by the app. Toggle on, then bind the vJoy axis to throttle.
+            let vjoy_ok = crate::vjoy::available();
+            let vlabel = if *vjoy_enabled { "🕹 vJoy throttle: ON" } else { "🕹 vJoy throttle" };
+            let vhover = if vjoy_ok {
+                "Combine both toe pedals into ONE bipolar throttle on vJoy device 1 (centre=stop, right toe=forward, left toe=reverse). Keep the app open while playing, then bind the vJoy axis to throttle."
+            } else {
+                "vJoy not detected/enabled — install vJoy and configure device 1 first (status MISS/FREE)."
+            };
+            if ui.add_enabled(vjoy_ok, egui::SelectableLabel::new(*vjoy_enabled, vlabel)).on_hover_text(vhover).clicked() {
+                *vjoy_enabled = !*vjoy_enabled;
+                crate::vjoy::set_active(*vjoy_enabled); // gates the vJoy .Remap block / MRP skip
+                *status = if *vjoy_enabled { "Virtual throttle ON — feeding vJoy device 1; keep the app open while playing.".into() }
+                          else { "Virtual throttle off.".into() };
             }
             if ui.add_enabled(avail, egui::Button::new("📊 Export diagram"))
                 .on_hover_text("Export the device images (with callouts) as PNG and/or PDF").clicked()

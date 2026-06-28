@@ -40,6 +40,7 @@ pub struct App {
     last_panel_rect: egui::Rect,        // screen rect of the device SidePanel, captured during render
     profile: String,                    // currently selected binding profile (default: App Defaults)
     profile_input: String,              // "new profile name" text field
+    vjoy_enabled: bool,                 // feed combined toe-throttle + rudder into vJoy device 1
 }
 
 impl App {
@@ -81,6 +82,7 @@ impl App {
             last_panel_rect: egui::Rect::NOTHING,
             profile: crate::profiles::APP_DEFAULTS.to_string(),
             profile_input: String::new(),
+            vjoy_enabled: false,
         };
         app.load_selected();
         app.crash_recover();
@@ -181,7 +183,7 @@ impl eframe::App for App {
             }
         }
 
-        let App { games, selected, actions, rows, devices, capture, status, elevated, hidden, hide_state, textures, show_labels, update, show_export_dialog, export_opts, pending_export, export_shot_sent, last_panel_rect, profile, profile_input } = self;
+        let App { games, selected, actions, rows, devices, capture, status, elevated, hidden, hide_state, textures, show_labels, update, show_export_dialog, export_opts, pending_export, export_shot_sent, last_panel_rect, profile, profile_input, vjoy_enabled } = self;
 
         // token -> bound action label, so the device diagram can show WHAT is bound
         // to each control (not just the control's name).
@@ -190,8 +192,18 @@ impl eframe::App for App {
             .filter_map(|b| actions.iter().find(|a| a.id == b.id).map(|a| (b.token.clone(), a.label.clone())))
             .collect();
 
+        // Feed the COMBINED toe-throttle + rudder into vJoy device 1 each frame (if on),
+        // so any game binds ONE clean bipolar throttle axis (centre=stop, right toe=forward,
+        // left toe=reverse) instead of two unipolar toes. MRP toes = Ry(fwd)/Rx(rev), rudder = Rz.
+        if *vjoy_enabled {
+            if let Some(mrp) = devices.iter().find(|d| (d.vid, d.pid) == (0x346E, 0x1200)) {
+                crate::vjoy::feed(crate::vjoy::HID_X, crate::vjoy::combine_toes(mrp.axes[4], mrp.axes[3]));
+                crate::vjoy::feed(crate::vjoy::HID_RZ, crate::vjoy::scale(mrp.axes[5]));
+            }
+        }
+
         panels::update_banner(ctx, status, update);
-        let reload = toolbar::top_bar(ctx, games, selected, rows, actions, status, *elevated, hidden, hide_state, show_export_dialog, profile, profile_input);
+        let reload = toolbar::top_bar(ctx, games, selected, rows, actions, status, *elevated, hidden, hide_state, show_export_dialog, profile, profile_input, vjoy_enabled);
 
         egui::SidePanel::left("devices").resizable(true).default_width(440.0).show(ctx, |ui| {
             *last_panel_rect = ui.max_rect();
