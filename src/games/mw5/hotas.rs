@@ -76,6 +76,33 @@ fn strip_device_blocks(text: &str, targets: &[(u16, u16)]) -> String {
     out
 }
 
+/// Keep only the START_BIND blocks whose (VID,PID) satisfies `keep` (blocks with no
+/// parseable VID/PID are kept for safety). Used to drop absent/stale device blocks so
+/// MW5 doesn't assign the Joystick slot to a device that isn't plugged in.
+fn retain_blocks(text: &str, keep: impl Fn(u16, u16) -> bool) -> String {
+    let bytes = text.as_bytes();
+    let mut starts = Vec::new();
+    let mut from = 0;
+    while let Some(rel) = text[from..].find("START_BIND") {
+        let s = from + rel;
+        if s == 0 || bytes[s - 1] == b'\n' { starts.push(s); }
+        from = s + "START_BIND".len();
+    }
+    if starts.is_empty() { return text.to_string(); }
+    let mut out = String::new();
+    out.push_str(&text[..starts[0]]);
+    for (i, &st) in starts.iter().enumerate() {
+        let en = if i + 1 < starts.len() { starts[i + 1] } else { text.len() };
+        let block = &text[st..en];
+        let keep_it = match (parse_hex_field(block, "VID:"), parse_hex_field(block, "PID:")) {
+            (Some(v), Some(p)) => keep(v, p),
+            _ => true, // unidentifiable -> keep
+        };
+        if keep_it { out.push_str(block); }
+    }
+    out
+}
+
 /// The MW5 OutAxis token for a device axis, by role + meaning (None = no slot).
 /// Matches the GameUserSettings token->action contract.
 fn out_axis_token(role: Role, sem: crate::devices::Sem) -> Option<&'static str> {
@@ -175,18 +202,28 @@ pub fn write_hotas_mappings() -> Result<String, String> {
         backup = b.display().to_string();
     }
 
-    // Strip the blocks we manage (real devices, by VID/PID) and re-emit them.
-    let targets: Vec<(u16, u16)> = crate::devices::registry().iter()
-        .filter(|d| !d.custom).map(|d| (d.vid, d.pid)).collect();
-    let mut out = strip_device_blocks(&existing, &targets).trim_end().to_string();
-    for d in crate::devices::registry().iter().filter(|d| !d.custom) {
+    // Only emit blocks for devices that are actually CONNECTED. Multiple Joystick-role
+    // blocks (the stale Thrustmaster entries MW5 ships with, or an absent Warthog) make
+    // the game assign the "Joystick" device slot to the WRONG device, which leaves the
+    // present stick's BUTTONS dead (axes can still work off the sole Throttle device).
+    // So: keep existing blocks only for connected devices we DON'T manage (preserve a
+    // user's unknown stick), drop everything absent/stale, and re-emit our registry
+    // devices that are connected.
+    let connected: Vec<(u16, u16)> = crate::input::poll().iter().map(|d| (d.vid, d.pid)).collect();
+    let registry_ids: Vec<(u16, u16)> = crate::devices::registry().iter().map(|d| (d.vid, d.pid)).collect();
+
+    let mut out = if connected.is_empty() {
+        // Safety: nothing detected — don't wipe the file; just manage our blocks in place.
+        strip_device_blocks(&existing, &registry_ids).trim_end().to_string()
+    } else {
+        retain_blocks(&existing, |vid, pid| {
+            connected.contains(&(vid, pid)) && !registry_ids.contains(&(vid, pid))
+        }).trim_end().to_string()
+    };
+    for d in crate::devices::registry().iter()
+        .filter(|d| !d.custom && (connected.is_empty() || connected.contains(&(d.vid, d.pid))))
+    {
         append_block(&mut out, &device_block(d));
-    }
-    // Custom-pedal template: add once and never clobber the user's later edits.
-    if !existing.contains("Custom Pedal") {
-        for d in crate::devices::registry().iter().filter(|d| d.custom) {
-            append_block(&mut out, &device_block(d));
-        }
     }
 
     if let Some(parent) = path.parent() {
