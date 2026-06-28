@@ -71,6 +71,114 @@ pub fn vjoytest() {
     println!("Done. Re-run --devices (or open vJoyMonitor) to confirm vJoy X moved.");
 }
 
+/// Self-contained vJoy round-trip: FEED a known button+axis pattern to vJoy device 1,
+/// then READ it back through our own DirectInput layer. Proves the feeder works AND that
+/// our button reading works — WITHOUT MechWarrior or any physical input. If the fed
+/// buttons read back, the in-game failure is downstream (MW5 config / device visibility);
+/// if they DON'T, the bug is in our feeder or DI button reading.
+pub fn vjoy_verify() {
+    use std::{thread::sleep, time::Duration};
+    println!("== vJoy round-trip verify (feed -> DirectInput read-back) ==");
+    if !crate::vjoy::available() {
+        println!("vJoy NOT available — install + enable vJoy, configure device 1 (>=20 buttons, axes X Y Z Rx Ry Rz).");
+        return;
+    }
+    let want: [u8; 5] = [1, 4, 7, 12, 18];
+    println!("status(1) before feed = {}", crate::vjoy::status());
+    let bres: Vec<bool> = want.iter().map(|&b| crate::vjoy::feed_button(b, true)).collect();
+    let ax = crate::vjoy::feed(crate::vjoy::HID_X, 28000);
+    let az = crate::vjoy::feed(crate::vjoy::HID_Z, 6000);
+    println!("feed_button results = {bres:?}   feed X = {ax}  feed Z = {az}   status now = {}", crate::vjoy::status());
+    // Read back a few times, RE-FEEDING each round (vJoy state should hold, but make sure).
+    let mut ok = false;
+    for round in 0..4 {
+        for &b in &want { crate::vjoy::feed_button(b, true); }
+        crate::vjoy::feed(crate::vjoy::HID_X, 28000);
+        crate::vjoy::feed(crate::vjoy::HID_Z, 6000);
+        sleep(Duration::from_millis(120));
+        let devs = crate::input::poll();
+        for (i, d) in devs.iter().filter(|d| (d.vid, d.pid) == (0x1234, 0xBEAD)).enumerate() {
+            let pressed: Vec<u8> = (0..32u8).filter(|&b| d.buttons & (1u32 << b) != 0).map(|b| b + 1).collect();
+            println!("  r{round} dev{i}: buttons={pressed:?}  X={} Z={}  ({} btns/{} axes)",
+                d.axes[0], d.axes[2], d.num_buttons, d.num_axes);
+            if want.iter().all(|w| pressed.contains(w)) { ok = true; }
+        }
+        if ok { break; }
+    }
+    for &b in &want { crate::vjoy::feed_button(b, false); }
+    if ok {
+        println!("✓ ROUND-TRIP OK — the feeder AND our button reading both work. Any in-game failure is");
+        println!("  downstream: MW5 must see ONLY vJoy (HidHide the MOZA, whitelist this app), the .Remap");
+        println!("  vJoy block must be saved (toggle vJoy mode ON, then Save), control mode = Classic/Mech.");
+    } else {
+        println!("✗ fed buttons did NOT read back. Either DI button reading is broken or rid(1) isn't the");
+        println!("  enumerated device. This is the real bug to fix before MW5 can ever work.");
+    }
+}
+
+/// Generate a clean, flat MechWarrior-style targeting-reticle logo to assets/logo.png —
+/// drawn programmatically with analytic anti-aliasing (no external image tools). The app
+/// embeds assets/logo.png at build time, so run this once, then rebuild.
+pub fn genlogo() {
+    use image::{Rgba, RgbaImage};
+    let n: u32 = 512;
+    let nf = n as f32;
+    let c = nf / 2.0;
+    let mut img = RgbaImage::new(n, n);
+
+    let smooth = |e0: f32, e1: f32, x: f32| { let t = ((x - e0) / (e1 - e0)).clamp(0.0, 1.0); t * t * (3.0 - 2.0 * t) };
+    let band = |v: f32, half: f32| 1.0 - smooth(half - 1.0, half + 1.0, v); // soft 1px-AA bar/ring edge
+    let range = |v: f32, lo: f32, hi: f32| smooth(lo - 1.0, lo + 1.0, v) * (1.0 - smooth(hi - 1.0, hi + 1.0, v));
+    let lerp = |a: f32, b: f32, t: f32| a + (b - a) * t;
+
+    let green = (61.0_f32, 217.0, 138.0);
+    let amber = (245.0_f32, 168.0, 64.0);
+
+    for y in 0..n {
+        for x in 0..n {
+            let px = x as f32 + 0.5;
+            let py = y as f32 + 0.5;
+            let mut col = [0.0f32, 0.0, 0.0, 0.0]; // straight RGBA, alpha 0..1
+            let mut over = |c3: (f32, f32, f32), cov: f32| {
+                if cov <= 0.0 { return; }
+                col[0] = lerp(col[0], c3.0, cov);
+                col[1] = lerp(col[1], c3.1, cov);
+                col[2] = lerp(col[2], c3.2, cov);
+                col[3] = col[3].max(cov);
+            };
+
+            // rounded-rect tile (SDF) with a vertical navy gradient
+            let half = nf / 2.0 - 22.0;
+            let radius = 110.0;
+            let qx = (px - c).abs() - half + radius;
+            let qy = (py - c).abs() - half + radius;
+            let d = (qx.max(0.0).powi(2) + qy.max(0.0).powi(2)).sqrt() + qx.max(qy).min(0.0) - radius;
+            let tile = 1.0 - smooth(-1.0, 1.0, d);
+            let t = py / nf;
+            over((lerp(40.0, 20.0, t), lerp(48.0, 25.0, t), lerp(71.0, 38.0, t)), tile);
+
+            // reticle
+            let dc = ((px - c).powi(2) + (py - c).powi(2)).sqrt();
+            let ax = (px - c).abs();
+            let ay = (py - c).abs();
+            let gap = band(ax, 17.0).max(band(ay, 17.0)); // break the ring where the crosshair crosses
+            let ring = band((dc - 160.0).abs(), 7.0) * (1.0 - gap);
+            let vbar = band(ax, 6.5) * range(ay, 40.0, 192.0);
+            let hbar = band(ay, 6.5) * range(ax, 40.0, 192.0);
+            over(green, ring.max(vbar).max(hbar));
+            // inner diamond brackets (HUD detail) at the diagonals, r~108
+            let diag = ((ax - ay).abs() < 9.0) as i32 as f32 * range(dc, 96.0, 120.0);
+            over(green, diag * 0.8);
+            // centre pip (amber accent)
+            over(amber, band(dc, 17.0));
+
+            img.put_pixel(x, y, Rgba([col[0] as u8, col[1] as u8, col[2] as u8, (col[3] * 255.0) as u8]));
+        }
+    }
+    img.save("assets/logo.png").expect("write assets/logo.png");
+    println!("wrote assets/logo.png ({n}x{n}) — rebuild to embed it.");
+}
+
 /// Fill every UNBOUND action with the known-good default layout, then save.
 /// Non-destructive: anything already bound (e.g. your fire groups) is left alone.
 pub fn apply_defaults() {

@@ -48,6 +48,14 @@ fn main() -> eframe::Result<()> {
         cli::vjoytest();
         return Ok(());
     }
+    if std::env::args().any(|a| a == "--vjoyverify") {
+        cli::vjoy_verify();
+        return Ok(());
+    }
+    if std::env::args().any(|a| a == "--genlogo") {
+        cli::genlogo();
+        return Ok(());
+    }
     if std::env::args().any(|a| a == "--ac7-setup") {
         cli::ac7_setup();
         return Ok(());
