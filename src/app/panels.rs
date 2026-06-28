@@ -66,13 +66,22 @@ pub(super) fn footers(ctx: &egui::Context, status: &mut String) {
                       else { format!("v{} · {branch}@{hash}", crate::update::current_version()) };
             ui.label(egui::RichText::new(tag).monospace().size(9.5).color(egui::Color32::from_rgb(120, 130, 150)));
         });
+    if status.trim().is_empty() { return; }
     egui::Area::new(egui::Id::new("footer_status"))
         .order(egui::Order::Foreground)
-        .anchor(egui::Align2::LEFT_BOTTOM, egui::vec2(450.0, -8.0))
+        .anchor(egui::Align2::CENTER_BOTTOM, egui::vec2(0.0, -10.0))
         .show(ctx, |ui| {
-            egui::Frame::popup(ui.style()).fill(egui::Color32::from_rgb(28, 32, 44)).show(ui, |ui| {
-                ui.label(egui::RichText::new(status.as_str()).strong());
-            });
+            // Readable toast: dark card, green accent border, bright high-contrast text.
+            egui::Frame::popup(ui.style())
+                .fill(egui::Color32::from_rgb(30, 34, 46))
+                .stroke(egui::Stroke::new(1.0, super::widgets::LIVE))
+                .rounding(egui::Rounding::same(8.0))
+                .inner_margin(egui::Margin::symmetric(14.0, 8.0))
+                .show(ui, |ui| {
+                    ui.set_max_width(720.0);
+                    ui.label(egui::RichText::new(status.as_str()).strong().size(13.5)
+                        .color(egui::Color32::from_rgb(228, 234, 242)));
+                });
         });
 }
 

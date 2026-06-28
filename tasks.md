@@ -56,6 +56,21 @@ across MW5/AC7/SC like the MOZA gear. Use the `add-joystick` skill.
 strip/retain/producible-tokens/**no-orphans**, parse read_buttons/set_action, export). Add more as
 features land. The `no_orphan_default_bindings` test is the guard against dead bindings.
 
+### ★ BUTTON BREAKTHROUGH (2026-06-28) — what actually works
+After a long debug with the user live, the working MW5 setup for the MOZA rig is:
+- **`.Remap` = a Joystick-role block whose VID/PID does NOT match the AB6** (e.g. the stock
+  T.16000M block, renamed) + the **MRP Throttle block**. The non-matching Joystick block
+  ENABLES MW5's "Joystick" controller; the present AB6 is then read NATIVELY → axes (aim),
+  pedals, throttle, look ALL work. An AB6-specific block (matching VID/PID) makes MW5 collapse
+  all 128 buttons to "Button 1" — so do NOT write one.
+- **Roles are set purely by the OutToken prefix** (`Joystick_*` vs `Throttle_*`), keyed per
+  device by VID/PID. Pedals = Throttle only because their block emits `Throttle_Axis1/2`.
+- **Sensitivity sliders** (Horizontal/Vertical/Leg Rotation) must be > 0 or axes do nothing.
+- **Control mode must be Classic/Mech** (not Modernize) for joystick input.
+- **BUTTONS still don't fire** — confirmed MW5 limitation with a 128-button device. Fix =
+  keyboard emulation [Task #25] (read buttons via dinput, SendInput keys, bind keyboard in MW5).
+- Official PGI spec PDF: https://static.mw5mercs.com/docs/MW5HotasRemappingDocumentation.pdf
+
 ### F. OPEN QUESTION — does MW5 even need the .Remap? [Task #24]
 User reports MW5's OWN bind UI captures joystick buttons (you can bind them) but in GAMEPLAY none
 fire — and our GameUserSettings binds also don't fire. Possible that MW5 (this Mercenaries install)

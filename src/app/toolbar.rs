@@ -1,5 +1,6 @@
-//! The top toolbar: the game picker plus every action button (Save, Fix HOTAS,
-//! Lock, Export, Hide/Restore, Launch, Run-as-admin). Split out of `panels` so
+//! The top toolbar: the game picker plus every action button (Save — which for
+//! MW5 also writes HOTASMappings.Remap, Export, Hide/Restore, Launch, Run-as-admin).
+//! Split out of `panels` so
 //! each file stays within the size budget; it touches only the app state passed in.
 
 use super::widgets::{file_name, persist};
@@ -85,34 +86,30 @@ pub(super) fn top_bar(
                     Err(e) => *status = e,
                 }
             }
-            if ui.add_enabled(avail, egui::Button::new("💾 Save to game")).clicked() {
+            // ONE Save: writes GameUserSettings (token->action) AND, for MW5, the
+            // SECOND file HOTASMappings.Remap (physical device->token). Both are
+            // required in-game, so they're a single action now (no separate button).
+            if ui.add_enabled(avail, egui::Button::new("💾 Save to game"))
+                .on_hover_text("Writes your bindings to the game. For MW5 this writes BOTH files (GameUserSettings + HOTASMappings.Remap).")
+                .clicked()
+            {
                 let p = games[*selected].as_ref();
                 if sys::any_process_running(&p.running_processes()) {
                     *status = "Close MW5 first — it overwrites the config on exit.".into();
                 } else {
                     match p.save(rows) {
-                        Ok(r) => *status = format!("Saved ✓  backup {}  ({} change(s){})",
-                            file_name(&r.backup), r.changed.len(),
-                            if r.missing.is_empty() { String::new() } else { format!(", {} skipped", r.missing.len()) }),
+                        Ok(r) => {
+                            let hotas = if games[*selected].name().contains("MechWarrior") {
+                                match crate::games::mw5::write_hotas_mappings() {
+                                    Ok(_) => "  + HOTAS file ✓".to_string(),
+                                    Err(e) => format!("  (HOTAS write failed: {e})"),
+                                }
+                            } else { String::new() };
+                            *status = format!("Saved ✓{}  backup {}  ({} change(s){})",
+                                hotas, file_name(&r.backup), r.changed.len(),
+                                if r.missing.is_empty() { String::new() } else { format!(", {} skipped", r.missing.len()) });
+                        }
                         Err(e) => *status = format!("Save failed: {}", e),
-                    }
-                }
-            }
-            // MW5 needs a SECOND file (HOTASMappings.Remap) mapping the physical
-            // MOZA stick/pedals -> tokens, or the bindings above do nothing in-game.
-            // Static (device->token), so this is a run-once button, not per-save.
-            if avail && games[*selected].name().contains("MechWarrior")
-                && ui.add(egui::Button::new("🎮 Fix HOTAS file"))
-                    .on_hover_text("Write SavedHOTAS\\HOTASMappings.Remap so MW5 reads your MOZA AB6 + pedals. Run once (and after plugging in a new stick).")
-                    .clicked()
-            {
-                let p = games[*selected].as_ref();
-                if sys::any_process_running(&p.running_processes()) {
-                    *status = "Close MW5 first — it overwrites HOTAS mappings on exit.".into();
-                } else {
-                    match crate::games::mw5::write_hotas_mappings() {
-                        Ok(b) => *status = format!("HOTAS file written ✓  MOZA stick+pedals now mapped  (backup {})", file_name(&b)),
-                        Err(e) => *status = format!("HOTAS write failed: {}", e),
                     }
                 }
             }
