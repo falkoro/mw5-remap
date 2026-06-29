@@ -20,7 +20,7 @@ use crate::input::Device;
 use crate::vjoy_map::VjoyMap;
 use devices_markers::{BASE_MARKERS, MHG_HATS, MHG_MARKERS, MHG_MULTI, PEDAL_MARKERS, VKB_HATS, VKB_MARKERS};
 use draw::{draw_callouts, draw_hats, draw_multi_callouts};
-pub use resolve::token_device;
+pub use resolve::{resolved_token, token_device};
 use eframe::egui;
 use std::collections::{HashMap, HashSet};
 

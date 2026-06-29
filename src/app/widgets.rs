@@ -191,19 +191,53 @@ const HAT_ARROWS: [&str; 8] = ["↑", "↗", "→", "↘", "↓", "↙", "←", 
 /// Live "what control is actuated right now" for the readout under the tab bar.
 /// Buttons + hat only — NO axis detection: the app feeds the vJoy device's axes
 /// every frame and idle/noisy physical axes jitter, so any most-moved-axis test
-/// false-positives constantly. Device-agnostic (no game token). Returns the body
-/// that follows "Detected: " (e.g. `MOZA AB6 — Button 5`), or None when idle.
-pub(super) fn detect_input(devices: &[input::Device], muted: &HashSet<(u16, u16)>) -> Option<String> {
-    for d in devices {
+/// false-positives constantly. Returns the body that follows "Detected: ", which
+/// now also resolves the physical control through vJoy + the bound action, e.g.
+/// `MOZA AB6 — Button 5  →  vJoy Button 5 · Fire Weapon Group 1`. None when idle.
+pub(super) fn detect_input(
+    devices: &[input::Device],
+    muted: &HashSet<(u16, u16)>,
+    p: &dyn GameProvider,
+    vjoy_map: &VjoyMap,
+    bound: &HashMap<String, String>,
+) -> Option<String> {
+    use crate::vjoy_map::Source;
+    for (idx, d) in devices.iter().enumerate() {
         if muted.contains(&(d.vid, d.pid)) { continue; } // soft-muted from the LIVE display
         if let Some(&b) = d.pressed_buttons().first() {
-            return Some(format!("{} — Button {}", d.name, b));
+            let head = format!("{} — Button {}", d.name, b);
+            let direct = p.button_token(d, b, idx);
+            let resolved = crate::visual::resolved_token(p, d, idx, Source::Button(b.saturating_sub(1) as u8), vjoy_map);
+            return Some(with_result(head, direct, resolved, bound));
         }
         if let Some(oct) = d.pov_octant() {
-            return Some(format!("{} — Hat {}", d.name, HAT_ARROWS[(oct as usize - 1) & 7]));
+            let head = format!("{} — Hat {}", d.name, HAT_ARROWS[(oct as usize - 1) & 7]);
+            let direct = p.pov_token(d, oct, idx);
+            // resolved_token has no single token for a whole hat unless vJoy routes it,
+            // so fall back to the direct hat token to still show the result + action.
+            let resolved = crate::visual::resolved_token(p, d, idx, Source::Pov, vjoy_map)
+                .or_else(|| direct.clone());
+            return Some(with_result(head, direct, resolved, bound));
         }
     }
     None
+}
+
+/// Append the vJoy RESULT (resolved MW5 token + bound action) to a physical-control
+/// readout: `… → vJoy Button 5 · Fire Weapon Group 1`. The `vJoy ` prefix shows only
+/// when the resolved token differs from the control's direct token (i.e. the feeder
+/// remaps it); the action half is omitted when the token is unbound.
+fn with_result(head: String, direct: Option<String>, resolved: Option<String>, bound: &HashMap<String, String>) -> String {
+    let tok = match resolved { Some(t) if !t.is_empty() => t, _ => return head };
+    let name = if direct.as_deref() == Some(tok.as_str()) {
+        pretty_token(&tok)
+    } else {
+        format!("vJoy {}", pretty_token(&tok))
+    };
+    match bound.get(&tok) {
+        Some(action) => format!("{head}  →  {name} · {action}"),
+        None => format!("{head}  →  {name}"),
+    }
 }
 
 /// Last path component of a config path, for friendly status messages.

@@ -101,7 +101,7 @@ impl App {
             hidden: Vec::new(),
             hide_state,
             textures: None,
-            show_labels: true,
+            show_labels: false, // images CLEAN by default; user clicks 🏷 Arrows to overlay callouts
             update,
             show_export_dialog: false,
             export_opts: ExportOpts::default(),
@@ -250,9 +250,10 @@ impl eframe::App for App {
         crate::vjoy::set_active(vjoy_active);
         if vjoy_active { vjoy_map.apply(devices); }
 
-        // Live "Detected:" readout — which stick + control is actuated this frame.
-        // Shown under the tab bar (below), so it's visible in BOTH tabs at once.
-        let detected = widgets::detect_input(devices, live_muted);
+        // Live "Detected:" readout — which stick + control is actuated this frame,
+        // resolved through vJoy to the MW5 token + bound action. Shown under the tab
+        // bar (below), so it's visible in BOTH tabs at once.
+        let detected = widgets::detect_input(devices, live_muted, games[*selected].as_ref(), vjoy_map, &bound);
 
         // Top-level tab selector — ABOVE everything else. Bind = the editor; vJoy
         // Setup = the routing UI. The feed loop above runs regardless of tab.
