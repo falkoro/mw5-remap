@@ -28,6 +28,7 @@ pub const DANGER: Color32 = Color32::from_rgb(196, 64, 60); // error text on lig
 
 pub const R_CHIP: f32 = 7.0;
 pub const R_CARD: f32 = 9.0;
+pub const CHIP_H: f32 = 28.0; // binding chip height; the row's clear/invert/scale cells align to it
 
 // AC7/SC palette: a stable colour per physical device id (used by `device_color`).
 pub const DEV_PALETTE: [Color32; 6] = [
@@ -47,6 +48,25 @@ pub fn tint(c: Color32, t: f32) -> Color32 {
 pub fn dot(ui: &mut egui::Ui, color: Color32, d: f32) {
     let (rect, _) = ui.allocate_exact_size(Vec2::splat(d), egui::Sense::hover());
     ui.painter().circle_filled(rect.center(), d * 0.5, color);
+}
+
+/// A small, FONT-SAFE "clear" (×) button: the cross is PAINTED (two strokes), so it
+/// never renders as a tofu □ the way a "✕" glyph does in egui's default font. Quiet by
+/// default (dim), danger-tinted on hover. Returns the click `Response`. Use it wherever
+/// a one-tap "remove this" control is wanted in a row.
+pub fn clear_button(ui: &mut egui::Ui) -> Response {
+    let (rect, resp) = ui.allocate_exact_size(Vec2::splat(20.0), egui::Sense::click());
+    let hov = resp.hovered();
+    let p = ui.painter();
+    if hov {
+        p.rect_filled(rect.shrink(1.0), Rounding::same(R_CHIP), tint(DANGER, 0.8));
+    }
+    let c = rect.center();
+    let r = 4.5;
+    let s = Stroke::new(1.7, if hov { DANGER } else { TEXT_DIM });
+    p.line_segment([c + Vec2::new(-r, -r), c + Vec2::new(r, r)], s);
+    p.line_segment([c + Vec2::new(r, -r), c + Vec2::new(-r, r)], s);
+    resp
 }
 
 // ── Global visuals ──────────────────────────────────────────────────────────────────────
@@ -144,7 +164,7 @@ pub fn chip(ui: &mut egui::Ui, text: &str, state: ChipState) -> Response {
         .fill(fill)
         .stroke(Stroke::new(bw, border))
         .rounding(Rounding::same(R_CHIP))
-        .min_size(Vec2::new(150.0, 28.0));
+        .min_size(Vec2::new(150.0, CHIP_H));
     let resp = ui.add(b);
     // LIVE: one soft outer ring so an active control reads as a glowing chip at a glance.
     if matches!(state, ChipState::Live) {

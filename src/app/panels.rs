@@ -3,7 +3,7 @@
 //! Split out of `update()` to keep each file under the size budget.
 
 use super::theme;
-use super::widgets::{binding_row, mute_chips, Capture};
+use super::widgets::{binding_row, Capture};
 use std::collections::HashSet;
 use crate::games::{Action, Binding, GameProvider};
 use crate::input;
@@ -174,7 +174,6 @@ pub(super) fn central(
             ).color(theme::TEXT_DIM));
         });
         legend(ui); // which colour = which physical device
-        mute_chips(ui, devices, live_muted); // per-stick LIVE mute (display-only)
         ui.separator();
         // Spread the categories across N balanced columns (by row count) so the whole
         // control map fits with less scrolling; ~500px per column to suit the width.

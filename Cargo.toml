@@ -1,6 +1,6 @@
 [package]
 name = "mw5-remap"
-version = "0.6.0"
+version = "0.6.1"
 edition = "2021"
 description = "Visual joystick binding editor for MechWarrior 5, Ace Combat 7, and Star Citizen"
 

@@ -37,29 +37,6 @@ pub(super) fn pretty_token(token: &str) -> String {
     }
 }
 
-/// A row of "Live: [chip] [chip] …" device toggles: click a stick's chip to soft-mute it
-/// from the LIVE display (green glow + Detected readout) so you can test one stick at a
-/// time. Muted chips render dimmed + struck-through. UI-only — never touches HidHide.
-pub(super) fn mute_chips(ui: &mut egui::Ui, devices: &[input::Device], muted: &mut HashSet<(u16, u16)>) {
-    if devices.is_empty() { return; }
-    ui.horizontal_wrapped(|ui| {
-        ui.label(egui::RichText::new("Live:").color(theme::TEXT))
-            .on_hover_text("Mute a stick from this app's live glow + Detected readout (display only).");
-        for d in devices {
-            let id = (d.vid, d.pid);
-            let is_muted = muted.contains(&id);
-            let mut rt = egui::RichText::new(&d.name).size(12.0);
-            rt = if is_muted { rt.strikethrough().color(theme::TEXT_FAINT) } else { rt.color(theme::TEXT) };
-            if ui.selectable_label(!is_muted, rt)
-                .on_hover_text("Click to mute/unmute this stick in the live display.")
-                .clicked()
-            {
-                if is_muted { muted.remove(&id); } else { muted.insert(id); }
-            }
-        }
-    });
-}
-
 /// One row of the Cockpit Bindings grid: action label, a colour-coded "chip"
 /// showing the bound control (click it to re-bind), a clear button, and (for axes)
 /// invert/scale. The chip turns green the instant its control is physically active.
@@ -80,9 +57,16 @@ pub(super) fn binding_row(
     let token = rows[i].token.clone();
     let live = !token.is_empty() && hot.iter().any(|h| h == &token);
 
+    // Every cell is a fixed-height row centred on the chip, so the action label, chip,
+    // "· vJoy" hint, clear button and the invert/scale controls line up down the columns.
+    let row = theme::CHIP_H;
+
     // action label — green while its control is live, amber while (re)binding
     let lbl_col = if capturing { theme::CAP_DK } else if live { theme::ACCENT_DK } else { theme::TEXT };
-    ui.colored_label(lbl_col, &actions[i].label);
+    ui.horizontal(|ui| {
+        ui.set_min_height(row);
+        ui.colored_label(lbl_col, &actions[i].label);
+    });
 
     // The chip: one clean, rounded, role-aware button (theme::chip). The state picks its
     // fill/border/text in one place; the device colour rides along in Bound; click = re-bind.
@@ -97,6 +81,7 @@ pub(super) fn binding_row(
     };
     // chip + a dim "which joystick" hint share one grid cell (keeps the 4-column layout).
     let clicked = ui.horizontal(|ui| {
+        ui.set_min_height(row);
         let resp = theme::chip(ui, &text, state)
             .on_hover_text("Click, then press the control / move the axis. Esc cancels.");
         if !token.is_empty() && !capturing {
@@ -122,17 +107,19 @@ pub(super) fn binding_row(
         }
     }
 
-    // clear button (only when bound)
-    if !token.is_empty() {
-        if ui.small_button("✕").on_hover_text("Clear this binding").clicked() {
+    // clear button (only when bound) — a PAINTED, font-safe × (never a tofu glyph),
+    // centred to the chip so the column stays aligned. Empty cell keeps the row height.
+    ui.horizontal(|ui| {
+        ui.set_min_height(row);
+        if !token.is_empty() && theme::clear_button(ui).on_hover_text("Clear this binding").clicked() {
             rows[i].token.clear();
         }
-    } else {
-        ui.label("");
-    }
+    });
 
-    if actions[i].kind == Kind::Axis {
-        ui.horizontal(|ui| {
+    // invert + scale (axes only); an empty cell holds the column for button rows.
+    ui.horizontal(|ui| {
+        ui.set_min_height(row);
+        if actions[i].kind == Kind::Axis {
             let mut inv = rows[i].scale < 0.0;
             if ui.checkbox(&mut inv, "Inv").changed() {
                 rows[i].scale = rows[i].scale.abs() * if inv { -1.0 } else { 1.0 };
@@ -142,10 +129,8 @@ pub(super) fn binding_row(
                 let sign = if rows[i].scale < 0.0 { -1.0 } else { 1.0 };
                 rows[i].scale = mag * sign;
             }
-        });
-    } else {
-        ui.label("");
-    }
+        }
+    });
     ui.end_row();
 }
 

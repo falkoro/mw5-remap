@@ -13,6 +13,7 @@
 mod devices_markers;
 mod draw;
 mod layout;
+mod panel;
 mod resolve;
 
 use crate::games::GameProvider;
@@ -182,34 +183,6 @@ pub fn hot_tokens(devices: &[Device], p: &dyn GameProvider, vjoy_map: &VjoyMap, 
     hot.into_iter().map(|t| remap.get(&t).cloned().unwrap_or(t)).collect()
 }
 
-/// Live raw-axis readout: one bar per axis per device showing the actual winmm
-/// value (0..65535) and the token it binds to. Always shows all six winmm slots
-/// [X Y Z R U V] so devices with gaps (the MRP uses X/Y/R) still read correctly —
-/// the unused slots simply sit at 0. This is the ground-truth "is the tool seeing
-/// my axis" display; it ignores deadzones/bindings entirely.
-fn live_axes(ui: &mut egui::Ui, devices: &[Device], p: &dyn GameProvider) {
-    const NAMES: [&str; 8] = ["X", "Y", "Z", "Rx", "Ry", "Rz", "S0", "S1"];
-    if devices.is_empty() {
-        ui.label(egui::RichText::new("no joysticks detected").weak());
-        return;
-    }
-    for (di, d) in devices.iter().enumerate() {
-        ui.label(egui::RichText::new(&d.name).strong().small());
-        for i in 0..8 {
-            if !d.present[i] { continue; } // only the axes Windows actually detects
-            let v = d.axes[i];
-            let tok = p.axis_token(d, i, di).unwrap_or_default();
-            let tok = tok.strip_prefix("Joystick_").or_else(|| tok.strip_prefix("Throttle_")).unwrap_or(&tok);
-            let label = if tok.is_empty() { NAMES[i].to_string() } else { format!("{} ({})", NAMES[i], tok) };
-            let w = ui.available_width().min(360.0);
-            ui.add(egui::ProgressBar::new(v as f32 / 65535.0)
-                .desired_width(w)
-                .text(egui::RichText::new(format!("{label}  {v}")).small()));
-        }
-        ui.add_space(3.0);
-    }
-}
-
 /// Draw a captioned image at width `w` with optional callouts laid over it.
 #[allow(clippy::too_many_arguments)]
 fn image_block(
@@ -256,7 +229,7 @@ pub fn sidebar(
     show_labels: &mut bool,
     bound: &HashMap<String, String>,
     vjoy_map: &VjoyMap,
-    muted: &HashSet<(u16, u16)>,
+    muted: &mut HashSet<(u16, u16)>,
     filter: Option<&crate::app::ExportOpts>,
 ) {
     // During an export capture, `filter` selects which devices to render so the
@@ -265,12 +238,7 @@ pub fn sidebar(
         Some(f) => (f.stick, f.base, f.pedals),
         None => (true, true, true),
     };
-    // Build the live "hot" token set: pressed buttons, POV octant, deflected axes.
-    let hot = hot_tokens(devices, p, vjoy_map, muted);
-    // vJoy-aware DIRECT-token -> RESOLVED-token map: while feeding, a marker's hardcoded
-    // direct token is two hops from MW5, so resolve it to what the game really receives.
-    // EMPTY when vJoy is off => callouts behave exactly as before.
-    let remap = resolve::vjoy_token_remap(p, devices, vjoy_map);
+    let live = filter.is_none(); // live panel (true) vs an export-capture frame (false)
 
     let edit = layout::edit_enabled();
     ui.horizontal(|ui| {
@@ -286,18 +254,25 @@ pub fn sidebar(
         }
     });
     ui.add_space(2.0);
-    // FINDABLE raw-axis readout: a clear, always-visible collapsible header pinned right
-    // under the Devices/Arrows row (collapsed by default). Expand it to watch the live
-    // value of every axis while testing — no need to hunt to the bottom of the scroll.
-    // The single live "what am I pressing" readout now lives only in the top Detected line.
-    if filter.is_none() {
-        egui::CollapsingHeader::new(egui::RichText::new("Live axes").strong())
-            .default_open(false)
-            .show(ui, |ui| live_axes(ui, devices, p))
-            .header_response
-            .on_hover_text("Raw value of every axis on every device — find your axis while testing.");
+    // Per-device show/hide: drop a controller you aren't using (its image, axes and live
+    // glow) from this panel in one click. Always visible so a hidden device is one tap back.
+    if live {
+        panel::visibility(ui, devices, muted);
     }
     ui.separator();
+
+    // The visibility toggles above hold the only &mut; everything below just READS the set,
+    // so reborrow it shared — the scroll closures then capture a plain &HashSet.
+    let muted: &HashSet<(u16, u16)> = muted;
+
+    // Build the live "hot" token set (pressed buttons, POV octant, deflected axes) AFTER
+    // the visibility toggles, so a just-hidden device stops glowing the SAME frame. Muted
+    // devices are skipped inside `hot_tokens`.
+    let hot = hot_tokens(devices, p, vjoy_map, muted);
+    // vJoy-aware DIRECT-token -> RESOLVED-token map: while feeding, a marker's hardcoded
+    // direct token is two hops from MW5, so resolve it to what the game really receives.
+    // EMPTY when vJoy is off => callouts behave exactly as before.
+    let remap = resolve::vjoy_token_remap(p, devices, vjoy_map);
 
     // Callouts are drawn whenever labels are on OR we're editing (you need to see the
     // dots to drag them).
@@ -307,27 +282,37 @@ pub fn sidebar(
     egui::ScrollArea::vertical().show(ui, |ui| {
         let iw = ui.available_width();
         ui.set_max_width(iw); // bound the inner ui so ui.columns splits correctly
+        // Raw-axis readout now sits WITH the diagrams (collapsible, collapsed by default)
+        // and scrolls alongside them, instead of being pinned above the panel.
+        if live {
+            egui::CollapsingHeader::new(egui::RichText::new("Live axes").strong())
+                .default_open(false)
+                .show(ui, |ui| panel::live_axes(ui, devices, p, muted))
+                .header_response
+                .on_hover_text("Raw value of every axis on every device in view — find your axis while testing.");
+            ui.add_space(6.0);
+        }
         // Main flight stick: full-width and prominent (it carries the most controls).
-        if want_stick {
+        if want_stick && !(live && muted.contains(&AB6)) {
             image_block(ui, "MHG Flight Stick", &tex.stick, iw, MHG_MARKERS, MHG_MULTI, MHG_HATS, &hot, oct, markers_visible, bound, &remap, "stick", edit);
             ui.add_space(6.0);
         }
-        // Secondary devices in a 2-up grid (scales as more get added: base, pedals,
-        // throttle, …). Each takes half the width.
-        if want_base || want_pedals {
+        // Secondary devices in a 2-up grid (base, pedals, …). Each takes half the width.
+        let show_base = want_base && !(live && muted.contains(&AB6));
+        let show_pedals = want_pedals && !(live && muted.contains(&MRP));
+        if show_base || show_pedals {
             ui.columns(2, |cols| {
                 let cw = (iw - 12.0) / 2.0;
-                if want_base {
+                if show_base {
                     image_block(&mut cols[0], "AB6 Base", &tex.base, cw, BASE_MARKERS, &[], &[], &hot, None, markers_visible, bound, &remap, "base", edit);
                 }
-                if want_pedals {
+                if show_pedals {
                     image_block(&mut cols[1], "MRP Pedals", &tex.pedals, cw, PEDAL_MARKERS, &[], &[], &hot, None, markers_visible, bound, &remap, "pedals", edit);
                 }
             });
         }
-        // VKB Gladiator EVO: full-width like the MHG (it carries many controls). Shown on
-        // the live panel only; the export capture (`filter`) targets the MOZA rig sheet.
-        if filter.is_none() {
+        // VKB Gladiator EVO: full-width, live panel only (export targets the MOZA sheet).
+        if live && !muted.contains(&VKB) {
             ui.add_space(6.0);
             image_block(ui, "VKB Gladiator EVO", &tex.vkb, iw, VKB_MARKERS, &[], VKB_HATS, &hot, vkb_oct, markers_visible, bound, &remap, "vkb", edit);
         }
