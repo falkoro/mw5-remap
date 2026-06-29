@@ -44,11 +44,14 @@ fn https_get(host: &str, path: &str, extra_headers: &str) -> Option<Vec<u8>> {
         } else {
             (hdr_w.as_ptr(), extra_headers.encode_utf16().count() as u32)
         };
+        // Guard against an unbounded/runaway body (a release exe is well under this).
+        const MAX_BODY: usize = 100 * 1024 * 1024;
         let mut body = None;
         if WinHttpSendRequest(req, hptr, hlen, std::ptr::null(), 0, 0, 0) != 0
             && WinHttpReceiveResponse(req, std::ptr::null_mut()) != 0
         {
             let mut buf = Vec::new();
+            let mut ok = true;
             loop {
                 let mut avail: u32 = 0;
                 if WinHttpQueryDataAvailable(req, &mut avail) == 0 || avail == 0 { break; }
@@ -57,8 +60,9 @@ fn https_get(host: &str, path: &str, extra_headers: &str) -> Option<Vec<u8>> {
                 if WinHttpReadData(req, chunk.as_mut_ptr() as *mut c_void, avail, &mut read) == 0 { break; }
                 chunk.truncate(read as usize);
                 buf.extend_from_slice(&chunk);
+                if buf.len() > MAX_BODY { ok = false; break; }
             }
-            body = Some(buf);
+            if ok { body = Some(buf); }
         }
         WinHttpCloseHandle(req);
         WinHttpCloseHandle(conn);
@@ -156,7 +160,12 @@ pub fn apply(url: &str) -> Result<(), String> {
     std::fs::write(&newp, &bytes).map_err(|e| e.to_string())?;
     let _ = std::fs::remove_file(&oldp);
     std::fs::rename(&cur, &oldp).map_err(|e| format!("rename current exe: {e}"))?;
-    std::fs::rename(&newp, &cur).map_err(|e| format!("install new exe: {e}"))?;
+    if let Err(e) = std::fs::rename(&newp, &cur) {
+        // Second rename failed after the first succeeded: `cur` no longer exists. Roll
+        // back so the only surviving copy (oldp) is restored to the launch path.
+        let _ = std::fs::rename(&oldp, &cur);
+        return Err(format!("install new exe: {e}"));
+    }
     std::process::Command::new(&cur).spawn().map_err(|e| e.to_string())?;
     std::process::exit(0);
 }
@@ -165,7 +174,14 @@ pub fn apply(url: &str) -> Result<(), String> {
 pub fn cleanup() {
     if let Ok(cur) = std::env::current_exe() {
         if let Some(dir) = cur.parent() {
-            let _ = std::fs::remove_file(dir.join("MW5-Remap.old.exe"));
+            let oldp = dir.join("MW5-Remap.old.exe");
+            // If a half-finished swap left the installed exe missing but the backup
+            // present, restore it instead of deleting the only surviving copy.
+            if !cur.exists() && oldp.exists() {
+                let _ = std::fs::rename(&oldp, &cur);
+            } else {
+                let _ = std::fs::remove_file(oldp);
+            }
         }
     }
 }

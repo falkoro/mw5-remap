@@ -21,8 +21,33 @@ pub enum CommunityState {
     Failed(String),
 }
 
+/// State of an async profile download, shared between the worker thread and the UI.
+#[derive(Clone)]
+pub enum DownloadState {
+    Idle,
+    /// Name of the profile currently being fetched.
+    Downloading(String),
+    /// Result message (ok or error) to surface once, then reset to Idle.
+    Done(String),
+}
+
 /// `github.com/<owner>/<repo>` — shown in the UI as the place to PR your profile.
 pub fn share_url() -> String { format!("github.com/{OWNER}/{REPO}") }
+
+/// Kick off a background download of one profile. The result message lands in `state`
+/// (Done) for the UI to surface; the UI shows "Downloading…" until then. Never blocks.
+pub fn start_download(state: &Arc<Mutex<DownloadState>>, name: &str, url: &str, game: &str) {
+    *state.lock().unwrap() = DownloadState::Downloading(name.to_string());
+    let st = state.clone();
+    let (name, url, game) = (name.to_string(), url.to_string(), game.to_string());
+    std::thread::spawn(move || {
+        let msg = match download(&name, &url, &game) {
+            Ok(n) => format!("Downloaded \"{n}\" — pick it in the Profile dropdown."),
+            Err(e) => format!("Download failed: {e}"),
+        };
+        *st.lock().unwrap() = DownloadState::Done(msg);
+    });
+}
 
 /// Kick off a background fetch of the profile listing for `game`. The result lands
 /// in `state` (Loaded/Failed); the UI shows "Loading…" until then. Never blocks.
@@ -48,8 +73,14 @@ pub fn list(game: &str) -> Result<Vec<(String, String)>, String> {
     let body = http_get(&url, "Accept: application/vnd.github+json\r\n")
         .ok_or("No network — couldn't reach GitHub.")?;
     // A missing repo/folder returns a JSON object ({"message":"Not Found"}); a real
-    // listing is a JSON array. Anything that isn't an array → treat as "none yet".
+    // listing is a JSON array. Only a 404 / "Not Found" means "none yet"; any OTHER
+    // message (e.g. "API rate limit exceeded") is a real error, not an empty list.
     if !body.trim_start().starts_with('[') {
+        if let Some(msg) = json_field(&body, "\"message\":\"") {
+            if msg != "Not Found" {
+                return Err(format!("GitHub: {msg}"));
+            }
+        }
         return Ok(Vec::new());
     }
     Ok(parse_listing(&body))
@@ -82,9 +113,12 @@ fn parse_listing(s: &str) -> Vec<(String, String)> {
         // Bound to this object: everything up to the next "name" key.
         let seg_end = s[from..].find(NAME).map(|r| from + r).unwrap_or(s.len());
         if name.ends_with(".profile") {
-            if let Some(url) = json_field(&s[from..seg_end], "\"download_url\":\"") {
-                let disp = name.trim_end_matches(".profile").to_string();
-                out.push((disp, url));
+            let disp = name.trim_end_matches(".profile").to_string();
+            // Skip a bare ".profile" (empty display name).
+            if !disp.is_empty() {
+                if let Some(url) = json_field(&s[from..seg_end], "\"download_url\":\"") {
+                    out.push((disp, url));
+                }
             }
         }
     }

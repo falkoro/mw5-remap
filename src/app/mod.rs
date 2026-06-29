@@ -52,6 +52,7 @@ pub struct App {
     vjoy_paused: bool,                  // pause feeding without deleting mappings
     show_community: bool,               // "🌐 Community profiles" browser open?
     community: Arc<Mutex<crate::community::CommunityState>>, // async listing fetch result
+    community_dl: Arc<Mutex<crate::community::DownloadState>>, // async profile download result
 }
 
 impl App {
@@ -101,6 +102,7 @@ impl App {
             vjoy_paused: false,
             show_community: false,
             community: Arc::new(Mutex::new(crate::community::CommunityState::Idle)),
+            community_dl: Arc::new(Mutex::new(crate::community::DownloadState::Idle)),
         };
         app.load_selected();
         app.crash_recover();
@@ -203,7 +205,7 @@ impl eframe::App for App {
             }
         }
 
-        let App { games, selected, actions, rows, devices, capture, status, elevated, hidden, hide_state, textures, show_labels, update, show_export_dialog, export_opts, pending_export, export_shot_sent, last_panel_rect, profile, profile_input, vjoy_map, vjoy_sel, vjoy_capture, vjoy_btn_pick, vjoy_axis_pick, vjoy_paused, show_community, community } = self;
+        let App { games, selected, actions, rows, devices, capture, status, elevated, hidden, hide_state, textures, show_labels, update, show_export_dialog, export_opts, pending_export, export_shot_sent, last_panel_rect, profile, profile_input, vjoy_map, vjoy_sel, vjoy_capture, vjoy_btn_pick, vjoy_axis_pick, vjoy_paused, show_community, community, community_dl } = self;
 
         // token -> bound action label, so the device diagram can show WHAT is bound
         // to each control (not just the control's name).
@@ -223,7 +225,7 @@ impl eframe::App for App {
         panels::update_banner(ctx, status, update);
         let reload = toolbar::top_bar(ctx, games, selected, rows, actions, status, *elevated, hidden, hide_state, show_export_dialog, profile, profile_input, show_community, community);
         if *show_community {
-            community_ui::dialog(ctx, show_community, community, &games[*selected].name().to_string(), status);
+            community_ui::dialog(ctx, show_community, community, community_dl, &games[*selected].name().to_string(), status);
         }
         vjoy_ui::panel(ctx, devices, vjoy_map, vjoy_capture, vjoy_sel, vjoy_btn_pick, vjoy_axis_pick, vjoy_paused, status);
 

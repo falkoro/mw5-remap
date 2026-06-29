@@ -74,7 +74,8 @@ impl Source {
     fn decode(s: &str) -> Option<Source> {
         let n = s.get(1..)?.parse::<u8>().ok()?;
         match s.as_bytes().first()? {
-            b'B' => Some(Source::Button(n)),
+            // Reject button bits >= 32: resolve()'s `1u32 << bit` would overflow/UB.
+            b'B' if n < 32 => Some(Source::Button(n)),
             b'A' => Some(Source::Axis(n)),
             _ => None,
         }
@@ -169,7 +170,7 @@ impl VjoyMap {
     pub fn next_free_button(&self) -> u8 {
         self.mappings.iter()
             .filter_map(|m| if let Target::Button(b) = m.target { Some(b) } else { None })
-            .max().map(|b| b + 1).unwrap_or(1)
+            .max().map(|b| b.saturating_add(1).min(128)).unwrap_or(1)
     }
 
     fn used_axes(&self) -> Vec<u32> {
@@ -258,6 +259,24 @@ mod tests {
     fn parse_skips_garbage() {
         assert!(parse_line("not a mapping").is_none());
         assert!(parse_line("").is_none());
+    }
+
+    #[test]
+    fn parse_rejects_button_bit_ge_32() {
+        // A hand-edited line with B40 would overflow resolve()'s `1u32 << bit` — reject it.
+        assert!(parse_line("346E\t1002\tB40\tB1\t0").is_none());
+        assert_eq!(Source::decode("B32"), None);
+        assert_eq!(Source::decode("B31"), Some(Source::Button(31)));
+    }
+
+    #[test]
+    fn next_free_button_caps_at_128() {
+        let mut map = VjoyMap::default();
+        map.add(Mapping { vid: 1, pid: 2, source: Source::Button(0), target: Target::Button(255), invert: false });
+        assert_eq!(map.next_free_button(), 128);
+        let mut map = VjoyMap::default();
+        map.add(Mapping { vid: 1, pid: 2, source: Source::Button(0), target: Target::Button(128), invert: false });
+        assert_eq!(map.next_free_button(), 128);
     }
 
     #[test]

@@ -110,7 +110,7 @@ pub(super) fn panel(
         ui.horizontal_wrapped(|ui| {
             let capturing = capture.is_some();
             ui.label("Bind one →  vJoy Button");
-            ui.add_enabled(!capturing, egui::DragValue::new(btn_pick).range(1..=128));
+            ui.add_enabled(!capturing, egui::DragValue::new(btn_pick).range(1..=32));
             if ui.add_enabled(vjoy_ok && sel.is_some() && !capturing, egui::Button::new("● Bind button")).clicked() {
                 start_capture(capture, sel, devices, Target::Button(*btn_pick), status);
             }

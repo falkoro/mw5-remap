@@ -2,7 +2,7 @@
 //! GitHub repo (loaded off-thread into `CommunityState`) and lets the user download
 //! one into their local profiles folder. Mirrors the `export_ui` dialog style.
 
-use crate::community::{self, CommunityState};
+use crate::community::{self, CommunityState, DownloadState};
 use eframe::egui;
 use std::sync::{Arc, Mutex};
 
@@ -13,11 +13,15 @@ pub fn dialog(
     ctx: &egui::Context,
     open: &mut bool,
     state: &Arc<Mutex<CommunityState>>,
+    dl: &Arc<Mutex<DownloadState>>,
     game: &str,
     status: &mut String,
 ) {
     let mut keep_open = *open;
     let mut to_download: Option<(String, String)> = None;
+    // A download in flight disables the buttons and shows a progress line.
+    let dl_snapshot = dl.lock().unwrap().clone();
+    let downloading = matches!(dl_snapshot, DownloadState::Downloading(_));
     egui::Window::new("🌐 Community profiles")
         .open(&mut keep_open)
         .collapsible(false)
@@ -48,7 +52,7 @@ pub fn dialog(
                     egui::ScrollArea::vertical().max_height(260.0).show(ui, |ui| {
                         for (name, url) in &list {
                             ui.horizontal(|ui| {
-                                if ui.button("⬇ Download").clicked() {
+                                if ui.add_enabled(!downloading, egui::Button::new("⬇ Download")).clicked() {
                                     to_download = Some((name.clone(), url.clone()));
                                 }
                                 ui.label(name);
@@ -56,6 +60,11 @@ pub fn dialog(
                         }
                     });
                 }
+            }
+
+            if let DownloadState::Downloading(name) = &dl_snapshot {
+                ui.add_space(4.0);
+                ui.horizontal(|ui| { ui.spinner(); ui.label(format!("Downloading \"{name}\"…")); });
             }
 
             ui.add_space(8.0);
@@ -68,11 +77,15 @@ pub fn dialog(
             );
         });
 
+    // Off-thread the download so a slow link can't freeze the UI thread.
     if let Some((name, url)) = to_download {
-        match community::download(&name, &url, game) {
-            Ok(n) => *status = format!("Downloaded \"{n}\" — pick it in the Profile dropdown."),
-            Err(e) => *status = format!("Download failed: {e}"),
-        }
+        community::start_download(dl, &name, &url, game);
+    }
+    // Surface a finished download's result once, then reset to Idle.
+    if let DownloadState::Done(msg) = dl_snapshot {
+        *status = msg;
+        *dl.lock().unwrap() = DownloadState::Idle;
+        ctx.request_repaint();
     }
     *open = keep_open;
 }

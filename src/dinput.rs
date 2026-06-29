@@ -152,6 +152,7 @@ extern "system" {
 extern "system" {
     fn CreateWindowExW(ex: u32, class: *const u16, name: *const u16, style: u32, x: i32, y: i32, w: i32, h: i32, parent: HWND, menu: *mut c_void, inst: HINSTANCE, param: *mut c_void) -> HWND;
     fn GetDesktopWindow() -> HWND;
+    fn DestroyWindow(hwnd: HWND) -> BOOL;
 }
 
 fn wide(s: &str) -> Vec<u16> { s.encode_utf16().chain(std::iter::once(0)).collect() }
@@ -162,11 +163,16 @@ fn wstr(buf: &[u16]) -> String {
 
 unsafe fn vtbl<T>(obj: *mut c_void) -> *const T { *(obj as *const *const T) }
 
+thread_local! {
+    static DATA_FORMAT: std::cell::Cell<Option<&'static DIDATAFORMAT>> = const { std::cell::Cell::new(None) };
+}
+
 /// The data format object table — 8 axes, one POV, 32 buttons. Built and leaked so
 /// the pointer stays valid for the whole process (DirectInput keeps a reference).
-/// Only called during one-time init, so the leak happens once. Not cached in a
-/// static because DIDATAFORMAT holds raw pointers (not Sync).
+/// Built-and-leaked exactly ONCE (cached in a thread-local — DIDATAFORMAT holds raw
+/// pointers so it's not Sync, and init() only runs on the main thread).
 fn data_format() -> &'static DIDATAFORMAT {
+    if let Some(fmt) = DATA_FORMAT.with(|c| c.get()) { return fmt; }
     let axis_guids: [&GUID; 8] = [
         &GUID_XAxis, &GUID_YAxis, &GUID_ZAxis, &GUID_RxAxis, &GUID_RyAxis, &GUID_RzAxis, &GUID_Slider, &GUID_Slider,
     ];
@@ -192,7 +198,9 @@ fn data_format() -> &'static DIDATAFORMAT {
         dwNumObjs: objs.len() as u32,
         rgodf: objs.as_ptr(),
     };
-    Box::leak(Box::new(fmt))
+    let leaked: &'static DIDATAFORMAT = Box::leak(Box::new(fmt));
+    DATA_FORMAT.with(|c| c.set(Some(leaked)));
+    leaked
 }
 
 struct DiDevice {
@@ -233,12 +241,14 @@ unsafe fn init() -> Option<DiContext> {
     }
     // a message-only window for SetCooperativeLevel (background, non-exclusive).
     let mut hwnd = CreateWindowExW(0, wide("STATIC").as_ptr(), std::ptr::null(), 0, 0, 0, 0, 0, HWND_MESSAGE, std::ptr::null_mut(), hinst, std::ptr::null_mut());
+    // Only OUR window may be destroyed on the failure paths; the desktop fallback must not.
+    let created = !hwnd.is_null();
     if hwnd.is_null() { hwnd = GetDesktopWindow(); }
 
     let v = vtbl::<IDirectInput8Vtbl>(di);
     let mut found: Vec<(GUID, u16, u16, String)> = Vec::new();
     let rc = ((*v).EnumDevices)(di, DI8DEVCLASS_GAMECTRL, enum_cb, &mut found as *mut _ as *mut c_void, DIEDFL_ATTACHEDONLY);
-    if rc < 0 { ((*v).Release)(di); return None; }
+    if rc < 0 { ((*v).Release)(di); if created { DestroyWindow(hwnd); } return None; }
 
     let fmt = data_format();
     let mut devices = Vec::new();
@@ -260,7 +270,7 @@ unsafe fn init() -> Option<DiContext> {
         let _ = ((*dv).Acquire)(dev);
         devices.push(DiDevice { dev, vid, pid, name, num_axes: caps.dwAxes, num_buttons: caps.dwButtons, has_pov: caps.dwPOVs > 0 });
     }
-    if devices.is_empty() { ((*v).Release)(di); return None; }
+    if devices.is_empty() { ((*v).Release)(di); if created { DestroyWindow(hwnd); } return None; }
     Some(DiContext { di, hwnd, devices })
 }
 
@@ -303,6 +313,8 @@ pub fn poll() -> Vec<DiAxes> {
                     let _ = ((*dv).Acquire)(d.dev);
                     let _ = ((*dv).Poll)(d.dev);
                     st.axes = [i32::MIN; 8];
+                    st.buttons = [0; 32];
+                    st.pov = 0;
                     let _ = ((*dv).GetDeviceState)(d.dev, std::mem::size_of::<DiState>() as u32, &mut st as *mut _ as *mut c_void);
                 }
                 let mut axes = [0u32; 8];
