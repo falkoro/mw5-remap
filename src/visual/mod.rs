@@ -10,6 +10,7 @@
 //! Layout: this `mod.rs` owns the public API, asset/marker tables, and orchestration;
 //! the pure painting helpers live in `draw`.
 
+mod devices_markers;
 mod draw;
 mod layout;
 mod resolve;
@@ -17,6 +18,7 @@ mod resolve;
 use crate::games::GameProvider;
 use crate::input::Device;
 use crate::vjoy_map::VjoyMap;
+use devices_markers::{BASE_MARKERS, MHG_HATS, MHG_MARKERS, PEDAL_MARKERS, VKB_HATS, VKB_MARKERS};
 use draw::{draw_callouts, draw_hats};
 use eframe::egui;
 use std::collections::HashMap;
@@ -24,11 +26,14 @@ use std::collections::HashMap;
 const STICK_PNG: &[u8] = include_bytes!("../../assets/mhg_stick.png");
 const BASE_PNG: &[u8] = include_bytes!("../../assets/ab6_base.png");
 const PEDALS_JPG: &[u8] = include_bytes!("../../assets/mrp_pedals.jpg");
+const VKB_JPG: &[u8] = include_bytes!("../../assets/vkb_evo.jpg");
 const LOGO_PNG: &[u8] = include_bytes!("../../assets/logo.png");
 
 // MOZA device ids (must match games::mw5 — used to read the right axis for highlight).
 const AB6: (u16, u16) = (0x346E, 0x1002);
 const MRP: (u16, u16) = (0x346E, 0x1200);
+// VKB Gladiator EVO (must match the devices.rs registry row).
+const VKB: (u16, u16) = (0x231D, 0x0201);
 
 const ACCENT: egui::Color32 = egui::Color32::from_rgb(240, 170, 40);
 const HOT: egui::Color32 = egui::Color32::from_rgb(70, 210, 110); // lit when pressed/moved
@@ -43,61 +48,15 @@ pub(crate) struct Marker {
     label: &'static str,
     token: &'static str,
 }
-const fn m(nx: f32, ny: f32, num: &'static str, label: &'static str, token: &'static str) -> Marker {
+pub(crate) const fn m(nx: f32, ny: f32, num: &'static str, label: &'static str, token: &'static str) -> Marker {
     Marker { nx, ny, num, label, token }
 }
-
-// MHG grip: physical reference labels. Button numbers differ per firmware, so we
-// don't guess them here — use the live board below to map a button to its number.
-// The POV hat does light up (we can read the hat octant directly).
-const MHG_MARKERS: &[Marker] = &[
-    // POV hat: ALL 8 positions, each shows the action bound to it ("Hat ↗ · <action>")
-    // and lights individually. Cardinals usually = look; diagonals = camera/chain-fire.
-    m(0.500, 0.235, "", "Hat ↑", "Joystick_Hat_1"),
-    m(0.535, 0.245, "", "Hat ↗", "Joystick_Hat_2"),
-    m(0.555, 0.270, "", "Hat →", "Joystick_Hat_3"),
-    m(0.535, 0.295, "", "Hat ↘", "Joystick_Hat_4"),
-    m(0.500, 0.305, "", "Hat ↓", "Joystick_Hat_5"),
-    m(0.465, 0.295, "", "Hat ↙", "Joystick_Hat_6"),
-    m(0.445, 0.270, "", "Hat ←", "Joystick_Hat_7"),
-    m(0.465, 0.245, "", "Hat ↖", "Joystick_Hat_8"),
-    // Analog thumb / POV hat = two axes: winmm U(4) = vertical, V(5) = horizontal.
-    // Two markers so BOTH directions light when you sweep it.
-    m(0.645, 0.215, "", "Thumb/POV hat ↕ (look)", "Joystick_Axis4"),
-    m(0.672, 0.232, "", "Thumb/POV hat ↔ (look)", "Joystick_Axis5"),
-    // Buttons show the bound action ("Trigger · Fire Weapon Group 1"). The button
-    // NUMBER per physical control is firmware-dependent, so these follow the app's
-    // default layout (Button1..6 = fire groups) — press one to confirm via the live
-    // green light, and rebind in the list if a number is off.
-    m(0.46, 0.45, "", "Trigger", "Joystick_Button1"),
-    m(0.41, 0.21, "", "Red button", "Joystick_Button2"),
-    m(0.55, 0.335, "", "Thumb button", "Joystick_Button4"),
-    m(0.45, 0.345, "", "Rocker switch", "Joystick_Button5"),
-    m(0.37, 0.49, "", "Pinky flip", "Joystick_Button6"),
-];
-
-// AB6 gimbal -> the two aim axes. Numbers = the Joystick_Axis index (= the token).
-const BASE_MARKERS: &[Marker] = &[
-    m(0.46, 0.30, "1", "Pitch ↕", "Joystick_Axis1"),
-    m(0.55, 0.40, "2", "Roll ↔", "Joystick_Axis2"),
-    m(0.50, 0.72, "", "FFB gimbal — \"Joystick\"", ""),
-];
-
-// MRP pedals -> Throttle axes. Number = the Throttle_Axis index (= the token).
-const PEDAL_MARKERS: &[Marker] = &[
-    m(0.50, 0.78, "1", "Rudder (turn legs)", "Throttle_Axis1"),
-    m(0.66, 0.40, "2", "Right toe → forward", "Throttle_Axis2"),
-    m(0.34, 0.40, "2", "Left toe → reverse", "Throttle_Axis2"),
-];
-
-// Main POV hat = 8-way (confirmed: MW5 Joystick_Hat_1..8, MOZA hat configurable
-// 8/4-way in MOZA Cockpit). Thumb control = a 5-way switch (4 dirs + center push).
-const MHG_HATS: &[(f32, f32, u8)] = &[(0.50, 0.27, 8), (0.585, 0.205, 5)];
 
 pub struct Textures {
     pub stick: egui::TextureHandle,
     pub base: egui::TextureHandle,
     pub pedals: egui::TextureHandle,
+    pub vkb: egui::TextureHandle,
     pub logo: egui::TextureHandle,
 }
 
@@ -113,6 +72,7 @@ pub fn load_textures(ctx: &egui::Context) -> Option<Textures> {
         stick: decode(ctx, "mhg_stick", STICK_PNG)?,
         base: decode(ctx, "ab6_base", BASE_PNG)?,
         pedals: decode(ctx, "mrp_pedals", PEDALS_JPG)?,
+        vkb: decode(ctx, "vkb_evo", VKB_JPG)?,
         logo: decode(ctx, "logo", LOGO_PNG)?,
     })
 }
@@ -143,24 +103,40 @@ fn axis_deflected(devices: &[Device], token: &str) -> bool {
     }
     // Centred axes in the DirectInput 8-axis layout [X,Y,Z,Rx,Ry,Rz,S0,S1]: AB6 gimbal
     // X=0/Y=1, AB6 analog hat Rx=3 (vertical) / Ry=4 (horizontal), MRP rudder Rz=5.
-    // Engaged when pushed past ~14% off centre.
-    let (id, idx) = match token {
-        "Joystick_Axis1" => (AB6, 1), // gimbal pitch (Y)
-        "Joystick_Axis2" => (AB6, 0), // gimbal roll (X)
-        "Joystick_Axis4" => (AB6, 3), // analog hat vertical (Rx)
-        "Joystick_Axis5" => (AB6, 4), // analog hat horizontal (Ry)
-        "Throttle_Axis1" => (MRP, 5), // rudder swing-arm (Rz)
-        _ => return false,
+    // A token can be claimed by more than one device (the generic VKB joystick reuses
+    // Joystick_Axis1/2), so collect every (device, slot) it maps to and light if ANY is
+    // pushed past ~14% off centre.
+    let mut wired: Vec<((u16, u16), usize)> = match token {
+        "Joystick_Axis1" => vec![(AB6, 1)], // AB6 gimbal pitch (Y)
+        "Joystick_Axis2" => vec![(AB6, 0)], // AB6 gimbal roll (X)
+        "Joystick_Axis4" => vec![(AB6, 3)], // AB6 analog hat vertical (Rx)
+        "Joystick_Axis5" => vec![(AB6, 4)], // AB6 analog hat horizontal (Ry)
+        "Throttle_Axis1" => vec![(MRP, 5)], // MRP rudder swing-arm (Rz)
+        _ => Vec::new(),
     };
-    match devices.iter().find(|d| (d.vid, d.pid) == id) {
-        Some(d) => ((d.axes.get(idx).copied().unwrap_or(32767) as i32) - 32767).abs() > 9000,
-        None => false,
+    // VKB Gladiator EVO (generic joystick): X(0)->Axis1 roll, Y(1)->Axis2 pitch,
+    // Rz(5)->Axis6 twist. Centred axes, same ~14% threshold.
+    match token {
+        "Joystick_Axis1" => wired.push((VKB, 0)),
+        "Joystick_Axis2" => wired.push((VKB, 1)),
+        "Joystick_Axis6" => wired.push((VKB, 5)),
+        _ => {}
     }
+    wired.iter().any(|&(id, idx)| {
+        devices.iter().find(|d| (d.vid, d.pid) == id).is_some_and(|d| {
+            ((d.axes.get(idx).copied().unwrap_or(32767) as i32) - 32767).abs() > 9000
+        })
+    })
 }
 
 /// Hat octant currently held on the AB6 (for the live spoke highlight).
 fn ab6_octant(devices: &[Device]) -> Option<u32> {
     devices.iter().find(|d| (d.vid, d.pid) == AB6).and_then(|d| d.pov_octant())
+}
+
+/// Hat octant currently held on the VKB Gladiator EVO (for its live spoke highlight).
+fn vkb_octant(devices: &[Device]) -> Option<u32> {
+    devices.iter().find(|d| (d.vid, d.pid) == VKB).and_then(|d| d.pov_octant())
 }
 
 /// The live set of tokens currently active: pressed buttons, the POV octant, and
@@ -176,7 +152,7 @@ pub fn hot_tokens(devices: &[Device], p: &dyn GameProvider, vjoy_map: &VjoyMap) 
             if let Some(t) = p.pov_token(d, o, i) { hot.push(t); }
         }
     }
-    for tok in ["Joystick_Axis1", "Joystick_Axis2", "Joystick_Axis4", "Joystick_Axis5", "Throttle_Axis1", "Throttle_Axis2"] {
+    for tok in ["Joystick_Axis1", "Joystick_Axis2", "Joystick_Axis4", "Joystick_Axis5", "Joystick_Axis6", "Throttle_Axis1", "Throttle_Axis2"] {
         if axis_deflected(devices, tok) { hot.push(tok.to_string()); }
     }
     // While the vJoy feeder is active a physical control's input reaches MW5 as its vJoy
@@ -307,6 +283,7 @@ pub fn sidebar(
     // dots to drag them).
     let markers_visible = *show_labels || edit;
     let oct = ab6_octant(devices);
+    let vkb_oct = vkb_octant(devices);
     egui::ScrollArea::vertical().show(ui, |ui| {
         let iw = ui.available_width();
         ui.set_max_width(iw); // bound the inner ui so ui.columns splits correctly
@@ -327,6 +304,12 @@ pub fn sidebar(
                     image_block(&mut cols[1], "MRP Pedals", &tex.pedals, cw, PEDAL_MARKERS, &[], &hot, None, markers_visible, bound, &remap, "pedals", edit);
                 }
             });
+        }
+        // VKB Gladiator EVO: full-width like the MHG (it carries many controls). Shown on
+        // the live panel only; the export capture (`filter`) targets the MOZA rig sheet.
+        if filter.is_none() {
+            ui.add_space(6.0);
+            image_block(ui, "VKB Gladiator EVO", &tex.vkb, iw, VKB_MARKERS, VKB_HATS, &hot, vkb_oct, markers_visible, bound, &remap, "vkb", edit);
         }
     });
 }

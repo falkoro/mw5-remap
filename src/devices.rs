@@ -48,6 +48,15 @@ const MRP_AXES: &[AxisMap] = &[ax(Yaw, "HOTAS_RZAxis", "Rz", false), ax(Throttle
 const WH_STICK_AXES: &[AxisMap] = &[ax(Pitch, "HOTAS_YAxis", "Y", true), ax(Roll, "HOTAS_XAxis", "X", false)];
 // Warthog throttle: main throttle lever on Z; lots of buttons; no usable hat axis here.
 const WH_THR_AXES: &[AxisMap] = &[ax(Throttle, "HOTAS_ZAxis", "Z", false)];
+// VKB Gladiator NXT EVO (the user's left-hand stick; right-hand is identical, mirrored):
+// X=roll, Y=pitch gimbal, plus a (lockable) stick TWIST on Rz -> yaw/leg-turn. Also an
+// analog mini-stick + two 8-way hats on the grip head (visual reference only). 128 buttons
+// reported but MW5 only honours Button1..20. Confirmed live: VID 231D PID 0201, has_pov.
+const VKB_EVO_AXES: &[AxisMap] = &[
+    ax(Pitch, "HOTAS_YAxis",  "Y",  true),
+    ax(Roll,  "HOTAS_XAxis",  "X",  false),
+    ax(Yaw,   "HOTAS_RZAxis", "Rz", false),
+];
 // Custom pedal template: assume a single self-centering rudder axis = yaw/turn.
 const CUSTOM_AXES: &[AxisMap] = &[ax(Yaw, "HOTAS_RZAxis", "Rz", false)];
 // vJoy virtual device, fed by the app's combiner: X = combined bipolar throttle
@@ -59,6 +68,7 @@ const REGISTRY: &[KnownDevice] = &[
     KnownDevice { name: "MOZA MRP Rudder Pedals", vid: 0x346E, pid: 0x1200, role: Role::Throttle, buttons: 0, has_hat: false, axes: MRP_AXES, custom: false },
     KnownDevice { name: "Thrustmaster Warthog Joystick", vid: 0x044F, pid: 0x0402, role: Role::Joystick, buttons: 19, has_hat: true, axes: WH_STICK_AXES, custom: false },
     KnownDevice { name: "Thrustmaster Warthog Throttle", vid: 0x044F, pid: 0x0404, role: Role::Throttle, buttons: 19, has_hat: false, axes: WH_THR_AXES, custom: false },
+    KnownDevice { name: "VKBsim Gladiator EVO", vid: 0x231D, pid: 0x0201, role: Role::Joystick, buttons: 128, has_hat: true, axes: VKB_EVO_AXES, custom: false },
     KnownDevice { name: "vJoy Device", vid: 0x1234, pid: 0xBEAD, role: Role::Throttle, buttons: 0, has_hat: false, axes: VJOY_AXES, custom: false },
     KnownDevice { name: "Custom Pedal (edit IDs)", vid: 0x0000, pid: 0x0000, role: Role::Throttle, buttons: 0, has_hat: false, axes: CUSTOM_AXES, custom: true },
 ];

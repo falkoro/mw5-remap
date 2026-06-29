@@ -97,7 +97,8 @@ fn main() -> eframe::Result<()> {
     if std::env::args().any(|a| a == "--imgcheck") {
         for (n, b) in [("ab6_base", include_bytes!("../assets/ab6_base.png").as_slice()),
                        ("mhg_stick", include_bytes!("../assets/mhg_stick.png").as_slice()),
-                       ("mrp_pedals", include_bytes!("../assets/mrp_pedals.jpg").as_slice())] {
+                       ("mrp_pedals", include_bytes!("../assets/mrp_pedals.jpg").as_slice()),
+                       ("vkb_evo", include_bytes!("../assets/vkb_evo.jpg").as_slice())] {
             match image::load_from_memory(b) {
                 Ok(img) => println!("{n}: OK {}x{} ({} bytes embedded)", img.width(), img.height(), b.len()),
                 Err(e) => println!("{n}: DECODE FAILED: {e}"),

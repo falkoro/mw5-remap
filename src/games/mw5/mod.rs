@@ -36,11 +36,13 @@ impl Mw5 {
 }
 
 fn role_for(dev: &Device, enum_index: usize) -> Role {
-    match (dev.vid, dev.pid) {
-        BASE => Role::Joystick,
-        PEDALS => Role::Throttle,
-        _ => match enum_index { 0 => Role::Joystick, 1 => Role::Throttle, _ => Role::Ignored },
+    // Any device in the shared registry uses its REGISTERED role (so a newly-added stick
+    // like the VKB gets Joystick automatically — no per-device hardcoding here). Unknown
+    // devices fall back to enumeration order (0 = Joystick, 1 = Throttle).
+    if let Some(kd) = crate::devices::registry().iter().find(|d| (d.vid, d.pid) == (dev.vid, dev.pid)) {
+        return kd.role;
     }
+    match enum_index { 0 => Role::Joystick, 1 => Role::Throttle, _ => Role::Ignored }
 }
 
 impl GameProvider for Mw5 {
