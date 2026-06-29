@@ -11,3 +11,6 @@ shot*.png
 MW5-Controls.html
 /app-screenshot.png
 /diagram-export.png
+
+# agent worktrees (transient)
+.claude/worktrees/
