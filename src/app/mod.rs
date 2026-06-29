@@ -65,7 +65,7 @@ pub struct App {
     show_community: bool,               // "🌐 Community profiles" browser open?
     community: Arc<Mutex<crate::community::CommunityState>>, // async listing fetch result
     community_dl: Arc<Mutex<crate::community::DownloadState>>, // async profile download result
-    detect_prev: HashMap<(u16, u16), [u32; 8]>, // last-frame axes per device, for the live "Detected:" readout
+    notif_log: Vec<String>, // history of status changes for the top-right notification feed (newest last)
 }
 
 impl App {
@@ -119,7 +119,7 @@ impl App {
             show_community: false,
             community: Arc::new(Mutex::new(crate::community::CommunityState::Idle)),
             community_dl: Arc::new(Mutex::new(crate::community::DownloadState::Idle)),
-            detect_prev: HashMap::new(),
+            notif_log: Vec::new(),
         };
         app.load_selected();
         app.crash_recover();
@@ -222,7 +222,14 @@ impl eframe::App for App {
             }
         }
 
-        let App { games, selected, tab, actions, rows, devices, capture, status, elevated, hidden, hide_state, textures, show_labels, update, show_export_dialog, export_opts, pending_export, export_shot_sent, last_panel_rect, profile, profile_input, vjoy_map, vjoy_sel, vjoy_capture, vjoy_btn_pick, vjoy_axis_pick, vjoy_pair_fwd, vjoy_pair_rev, vjoy_paused, show_community, community, community_dl, detect_prev } = self;
+        let App { games, selected, tab, actions, rows, devices, capture, status, elevated, hidden, hide_state, textures, show_labels, update, show_export_dialog, export_opts, pending_export, export_shot_sent, last_panel_rect, profile, profile_input, vjoy_map, vjoy_sel, vjoy_capture, vjoy_btn_pick, vjoy_axis_pick, vjoy_pair_fwd, vjoy_pair_rev, vjoy_paused, show_community, community, community_dl, notif_log } = self;
+
+        // Capture every status change into the notification feed history (newest last,
+        // capped). The top-right feed below renders this so old notifications stay visible.
+        if !status.trim().is_empty() && notif_log.last().map(|s| s != status).unwrap_or(true) {
+            notif_log.push(status.clone());
+            if notif_log.len() > 8 { notif_log.remove(0); }
+        }
 
         // token -> bound action label, so the device diagram can show WHAT is bound
         // to each control (not just the control's name).
@@ -241,7 +248,7 @@ impl eframe::App for App {
 
         // Live "Detected:" readout — which stick + control is actuated this frame.
         // Shown under the tab bar (below), so it's visible in BOTH tabs at once.
-        let detected = widgets::detect_input(devices, detect_prev);
+        let detected = widgets::detect_input(devices);
 
         // Top-level tab selector — ABOVE everything else. Bind = the editor; vJoy
         // Setup = the routing UI. The feed loop above runs regardless of tab.
@@ -276,6 +283,10 @@ impl eframe::App for App {
                 false
             }
         };
+
+        // Top-right notification feed (history) — drawn last so it floats over both
+        // tabs; offset down when the update banner is also occupying the top-right.
+        panels::notif_feed(ctx, notif_log, update.lock().unwrap().is_some());
 
         if reload { self.load_selected(); }
         ctx.request_repaint_after(Duration::from_millis(30));

@@ -150,42 +150,23 @@ pub(super) fn binding_row(
     ui.end_row();
 }
 
-pub(super) const AXIS_NAMES: [&str; 8] = ["X", "Y", "Z", "Rx", "Ry", "Rz", "Slider0", "Slider1"];
 const HAT_ARROWS: [&str; 8] = ["↑", "↗", "→", "↘", "↓", "↙", "←", "↖"];
 
 /// Live "what control is actuated right now" for the readout under the tab bar.
-/// Mirrors `resolve_capture`'s detection order (buttons → hat → most-moved axis)
-/// but device-agnostic (no game token). Axis motion is judged against the previous
-/// frame (`prev`, keyed by VID/PID) instead of a capture baseline, so a stick
-/// resting off-centre (e.g. toe pedals at 0) is NOT a false positive — only an
-/// axis the user is actively moving shows. Returns the body that follows
-/// "Detected: " (e.g. `MOZA AB6 — Button 5`), or None when nothing is actuated.
-pub(super) fn detect_input(devices: &[input::Device], prev: &mut HashMap<(u16, u16), [u32; 8]>) -> Option<String> {
-    let mut found: Option<String> = None;
+/// Buttons + hat only — NO axis detection: the app feeds the vJoy device's axes
+/// every frame and idle/noisy physical axes jitter, so any most-moved-axis test
+/// false-positives constantly. Device-agnostic (no game token). Returns the body
+/// that follows "Detected: " (e.g. `MOZA AB6 — Button 5`), or None when idle.
+pub(super) fn detect_input(devices: &[input::Device]) -> Option<String> {
     for d in devices {
-        let last = prev.insert((d.vid, d.pid), d.axes); // always refresh, for every device
-        if found.is_some() { continue; }
         if let Some(&b) = d.pressed_buttons().first() {
-            found = Some(format!("{} — Button {}", d.name, b));
-            continue;
+            return Some(format!("{} — Button {}", d.name, b));
         }
         if let Some(oct) = d.pov_octant() {
-            found = Some(format!("{} — Hat {}", d.name, HAT_ARROWS[(oct as usize - 1) & 7]));
-            continue;
-        }
-        if let Some(base) = last {
-            let mut best = (0i64, 0usize);
-            for ax in 0..8 {
-                if !d.present[ax] { continue; }
-                let delta = (d.axes[ax] as i64 - base[ax] as i64).abs();
-                if delta > best.0 { best = (delta, ax); }
-            }
-            if best.0 > 3000 {
-                found = Some(format!("{} — axis {}", d.name, AXIS_NAMES[best.1]));
-            }
+            return Some(format!("{} — Hat {}", d.name, HAT_ARROWS[(oct as usize - 1) & 7]));
         }
     }
-    found
+    None
 }
 
 /// Last path component of a config path, for friendly status messages.

@@ -72,7 +72,7 @@ pub(super) fn bind_tab(
     });
 
     panels::central(ctx, games, *selected, textures, devices, capture, rows, actions, status, vjoy_map, groups);
-    panels::footers(ctx, status);
+    panels::footers(ctx);
 
     // Export device-sheet flow: dialog -> (filtered repaint) -> screenshot -> crop + write.
     // We arm `pending_export` first so the NEXT frame paints the side panel with the

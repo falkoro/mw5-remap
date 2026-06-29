@@ -50,11 +50,11 @@ pub(super) fn update_banner(ctx: &egui::Context, status: &mut String, update: &U
         });
 }
 
-/// Footer overlays. A real TopBottomPanel::bottom gets overpainted by the central
-/// columns here, so we float these on top of everything instead: a tiny, unobtrusive
+/// Footer overlay. A real TopBottomPanel::bottom gets overpainted by the central
+/// columns here, so we float this on top of everything instead: a tiny, unobtrusive
 /// version stamp at the bottom-right (no box, no button — updates surface only via the
-/// banner when one is actually available), status at the bottom-left.
-pub(super) fn footers(ctx: &egui::Context, status: &mut String) {
+/// banner when one is actually available). Status now lives in the top-right feed.
+pub(super) fn footers(ctx: &egui::Context) {
     egui::Area::new(egui::Id::new("footer_build"))
         .order(egui::Order::Foreground)
         .anchor(egui::Align2::RIGHT_BOTTOM, egui::vec2(-8.0, -4.0))
@@ -66,22 +66,48 @@ pub(super) fn footers(ctx: &egui::Context, status: &mut String) {
                       else { format!("v{} · {branch}@{hash}", crate::update::current_version()) };
             ui.label(egui::RichText::new(tag).monospace().size(9.5).color(egui::Color32::from_rgb(120, 130, 150)));
         });
-    if status.trim().is_empty() { return; }
-    egui::Area::new(egui::Id::new("footer_status"))
+}
+
+/// The TOP-RIGHT notification feed: a vertical stack of recent status messages with
+/// history, NEWEST AT TOP. The newest is a bright dark-card with the green LIVE accent;
+/// older entries fade (dimmer text) and shrink slightly. Shows the last ~6 entries.
+/// When the update banner occupies the top-right (`shifted`), the feed starts lower so
+/// the two don't collide. Floats over both tabs.
+pub(super) fn notif_feed(ctx: &egui::Context, log: &[String], shifted: bool) {
+    if log.is_empty() { return; }
+    let accent = super::widgets::LIVE;
+    let top = if shifted { 102.0 } else { 12.0 };
+    egui::Area::new(egui::Id::new("notif_feed"))
         .order(egui::Order::Foreground)
-        .anchor(egui::Align2::CENTER_BOTTOM, egui::vec2(0.0, -10.0))
+        .anchor(egui::Align2::RIGHT_TOP, egui::vec2(-12.0, top))
         .show(ctx, |ui| {
-            // Readable toast: dark card, green accent border, bright high-contrast text.
-            egui::Frame::popup(ui.style())
-                .fill(egui::Color32::from_rgb(30, 34, 46))
-                .stroke(egui::Stroke::new(1.0, super::widgets::LIVE))
-                .rounding(egui::Rounding::same(8.0))
-                .inner_margin(egui::Margin::symmetric(14.0, 8.0))
-                .show(ui, |ui| {
-                    ui.set_max_width(720.0);
-                    ui.label(egui::RichText::new(status.as_str()).strong().size(13.5)
-                        .color(egui::Color32::from_rgb(228, 234, 242)));
-                });
+            // newest first: iterate the tail in reverse, brightest at the top.
+            for (depth, msg) in log.iter().rev().take(6).enumerate() {
+                let fade = 1.0 - (depth as f32 * 0.13); // 1.0 (newest) -> ~0.35
+                let txt_col = if depth == 0 {
+                    egui::Color32::from_rgb(228, 234, 242)
+                } else {
+                    let g = (170.0 * fade).clamp(95.0, 200.0) as u8;
+                    egui::Color32::from_rgb(g.saturating_add(20), g.saturating_add(26), g.saturating_add(40))
+                };
+                let stroke = if depth == 0 {
+                    egui::Stroke::new(1.0, accent)
+                } else {
+                    egui::Stroke::new(1.0, egui::Color32::from_rgb(56, 62, 78))
+                };
+                let size = 13.5 - depth as f32 * 0.9; // newest biggest
+                egui::Frame::popup(ui.style())
+                    .fill(if depth == 0 { egui::Color32::from_rgb(30, 34, 46) } else { egui::Color32::from_rgb(25, 28, 38) })
+                    .stroke(stroke)
+                    .rounding(egui::Rounding::same(8.0))
+                    .inner_margin(egui::Margin::symmetric(12.0, depth.min(1) as f32 * -1.0 + 7.0))
+                    .show(ui, |ui| {
+                        ui.set_max_width(300.0);
+                        let rt = egui::RichText::new(msg.as_str()).size(size).color(txt_col);
+                        ui.label(if depth == 0 { rt.strong() } else { rt });
+                    });
+                ui.add_space(4.0);
+            }
         });
 }
 
