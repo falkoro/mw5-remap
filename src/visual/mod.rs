@@ -299,13 +299,6 @@ pub fn sidebar(
             }
         });
     }
-    // Raw axis readout: the actual winmm value of every axis on every device, each
-    // labelled with the Joystick/Throttle token it binds to. Binding-independent —
-    // if a bar moves, the tool is reading that axis (and you can see which token to
-    // bind). If it doesn't move, winmm itself isn't seeing it.
-    egui::CollapsingHeader::new("Live axes (raw)").default_open(true).show(ui, |ui| {
-        live_axes(ui, devices, p);
-    });
     ui.separator();
 
     // Callouts are drawn whenever labels are on OR we're editing (you need to see the
@@ -339,6 +332,18 @@ pub fn sidebar(
         if filter.is_none() {
             ui.add_space(6.0);
             image_block(ui, "VKB Gladiator EVO", &tex.vkb, iw, VKB_MARKERS, &[], VKB_HATS, &hot, vkb_oct, markers_visible, bound, &remap, "vkb", edit);
+        }
+        // Raw axis readout: the actual winmm value of every axis on every device, each
+        // labelled with the Joystick/Throttle token it binds to. Binding-independent —
+        // if a bar moves, the tool is reading that axis (and you can see which token to
+        // bind). Tucked BELOW the device images and COLLAPSED by default so it stays out
+        // of the way until you actually want the raw metrics.
+        if filter.is_none() {
+            ui.add_space(8.0);
+            ui.separator();
+            egui::CollapsingHeader::new("Live axes (raw)").default_open(false).show(ui, |ui| {
+                live_axes(ui, devices, p);
+            });
         }
     });
 }

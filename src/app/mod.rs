@@ -122,7 +122,7 @@ impl App {
             community: Arc::new(Mutex::new(crate::community::CommunityState::Idle)),
             community_dl: Arc::new(Mutex::new(crate::community::DownloadState::Idle)),
             notif_log: Vec::new(),
-            notif_collapsed: false,
+            notif_collapsed: true, // start collapsed: show only the 🔔 badge until clicked
             live_muted: HashSet::new(),
         };
         app.load_selected();

@@ -33,17 +33,14 @@ fn token_to_target(token: &str) -> Option<Target> {
 
 /// Which physical joystick a bound token actually comes from, for a dim hint next to the
 /// chip in the binding grid. If the token is a vJoy-produced token AND the routing table
-/// maps something onto that vJoy Target, returns `"vJoy ← {source stick}"`. Otherwise
-/// falls back to the connected device whose ROLE matches the token (Joystick_*/Throttle_*),
-/// or None when nothing matches.
+/// maps something onto that vJoy Target, returns just `"vJoy"` (the user binds vJoy and
+/// only cares that it's the vJoy route — no arrow glyph, no physical source name).
+/// Otherwise falls back to the connected device whose ROLE matches the token
+/// (Joystick_*/Throttle_*), or None when nothing matches.
 pub fn token_device(token: &str, vjoy_map: &VjoyMap, devices: &[Device]) -> Option<String> {
     if let Some(target) = token_to_target(token) {
-        if let Some(m) = vjoy_map.mappings.iter().find(|m| m.target == target) {
-            let name = devices.iter().find(|d| d.vid == m.vid && d.pid == m.pid)
-                .map(|d| d.name.clone())
-                .or_else(|| crate::devices::name_for(m.vid, m.pid).map(String::from))
-                .unwrap_or_else(|| format!("{:04X}:{:04X}", m.vid, m.pid));
-            return Some(format!("vJoy ← {name}"));
+        if vjoy_map.mappings.iter().any(|m| m.target == target) {
+            return Some("vJoy".to_string());
         }
     }
     // No vJoy mapping: name the connected device whose registry role matches the token.
