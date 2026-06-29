@@ -12,9 +12,11 @@
 
 mod draw;
 mod layout;
+mod resolve;
 
 use crate::games::GameProvider;
 use crate::input::Device;
+use crate::vjoy_map::VjoyMap;
 use draw::{draw_callouts, draw_hats};
 use eframe::egui;
 use std::collections::HashMap;
@@ -164,7 +166,7 @@ fn ab6_octant(devices: &[Device]) -> Option<u32> {
 /// The live set of tokens currently active: pressed buttons, the POV octant, and
 /// deflected/pressed axes. Shared by the device panel AND the Cockpit Bindings
 /// list so a binding row lights up the instant you touch its control.
-pub fn hot_tokens(devices: &[Device], p: &dyn GameProvider) -> Vec<String> {
+pub fn hot_tokens(devices: &[Device], p: &dyn GameProvider, vjoy_map: &VjoyMap) -> Vec<String> {
     let mut hot: Vec<String> = Vec::new();
     for (i, d) in devices.iter().enumerate() {
         for b in d.pressed_buttons() {
@@ -177,7 +179,13 @@ pub fn hot_tokens(devices: &[Device], p: &dyn GameProvider) -> Vec<String> {
     for tok in ["Joystick_Axis1", "Joystick_Axis2", "Joystick_Axis4", "Joystick_Axis5", "Throttle_Axis1", "Throttle_Axis2"] {
         if axis_deflected(devices, tok) { hot.push(tok.to_string()); }
     }
-    hot
+    // While the vJoy feeder is active a physical control's input reaches MW5 as its vJoy
+    // Target's token, so route every live DIRECT token through the resolver — a marker /
+    // binding row then lights on the token MW5 actually receives. Identity (no-op) when
+    // vJoy is off, so the hot set is byte-for-byte what it was before.
+    let remap = resolve::vjoy_token_remap(p, devices, vjoy_map);
+    if remap.is_empty() { return hot; }
+    hot.into_iter().map(|t| remap.get(&t).cloned().unwrap_or(t)).collect()
 }
 
 /// Live raw-axis readout: one bar per axis per device showing the actual winmm
@@ -213,7 +221,7 @@ fn live_axes(ui: &mut egui::Ui, devices: &[Device], p: &dyn GameProvider) {
 fn image_block(
     ui: &mut egui::Ui, caption: &str, tex: &egui::TextureHandle, w: f32,
     markers: &[Marker], hats: &[(f32, f32, u8)], hot: &[String], octant: Option<u32>, show: bool,
-    bound: &HashMap<String, String>, device_key: &str, edit: bool,
+    bound: &HashMap<String, String>, remap: &HashMap<String, String>, device_key: &str, edit: bool,
 ) {
     ui.add_space(8.0);
     ui.strong(caption);
@@ -228,7 +236,7 @@ fn image_block(
             m(nx, ny, mk.num, mk.label, mk.token)
         }).collect();
         draw_hats(&painter, rect, hats, octant);
-        draw_callouts(&painter, rect, &resolved, hot, bound);
+        draw_callouts(&painter, rect, &resolved, hot, bound, remap);
         if edit { layout::drag_markers(ui, &painter, rect, device_key, &resolved); }
     }
 }
@@ -243,6 +251,7 @@ pub fn sidebar(
     p: &dyn GameProvider,
     show_labels: &mut bool,
     bound: &HashMap<String, String>,
+    vjoy_map: &VjoyMap,
     filter: Option<&crate::app::ExportOpts>,
 ) {
     // During an export capture, `filter` selects which devices to render so the
@@ -252,7 +261,11 @@ pub fn sidebar(
         None => (true, true, true),
     };
     // Build the live "hot" token set: pressed buttons, POV octant, deflected axes.
-    let hot = hot_tokens(devices, p);
+    let hot = hot_tokens(devices, p, vjoy_map);
+    // vJoy-aware DIRECT-token -> RESOLVED-token map: while feeding, a marker's hardcoded
+    // direct token is two hops from MW5, so resolve it to what the game really receives.
+    // EMPTY when vJoy is off => callouts behave exactly as before.
+    let remap = resolve::vjoy_token_remap(p, devices, vjoy_map);
     let mut readout = hot.clone();
     readout.sort();
     readout.dedup();
@@ -299,7 +312,7 @@ pub fn sidebar(
         ui.set_max_width(iw); // bound the inner ui so ui.columns splits correctly
         // Main flight stick: full-width and prominent (it carries the most controls).
         if want_stick {
-            image_block(ui, "MHG Flight Stick", &tex.stick, iw, MHG_MARKERS, MHG_HATS, &hot, oct, markers_visible, bound, "stick", edit);
+            image_block(ui, "MHG Flight Stick", &tex.stick, iw, MHG_MARKERS, MHG_HATS, &hot, oct, markers_visible, bound, &remap, "stick", edit);
             ui.add_space(6.0);
         }
         // Secondary devices in a 2-up grid (scales as more get added: base, pedals,
@@ -308,10 +321,10 @@ pub fn sidebar(
             ui.columns(2, |cols| {
                 let cw = (iw - 12.0) / 2.0;
                 if want_base {
-                    image_block(&mut cols[0], "AB6 Base", &tex.base, cw, BASE_MARKERS, &[], &hot, None, markers_visible, bound, "base", edit);
+                    image_block(&mut cols[0], "AB6 Base", &tex.base, cw, BASE_MARKERS, &[], &hot, None, markers_visible, bound, &remap, "base", edit);
                 }
                 if want_pedals {
-                    image_block(&mut cols[1], "MRP Pedals", &tex.pedals, cw, PEDAL_MARKERS, &[], &hot, None, markers_visible, bound, "pedals", edit);
+                    image_block(&mut cols[1], "MRP Pedals", &tex.pedals, cw, PEDAL_MARKERS, &[], &hot, None, markers_visible, bound, &remap, "pedals", edit);
                 }
             });
         }

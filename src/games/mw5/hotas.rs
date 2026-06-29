@@ -138,23 +138,58 @@ fn mrp_pedal_block() -> String {
 /// X/Y = gimbal aim, Rx/Ry = thumb-hat look, Z = combined throttle, Rz = rudder. All
 /// axes are CENTRED by the feeder, so Offset=-0.5. Maps to BOTH Joystick+Throttle roles.
 fn vjoy_block() -> String {
+    use crate::vjoy_map::Target;
     let mut s = String::from("START_BIND\r\nNAME: vJoy Device\r\nVID: 0x1234\r\nPID: 0xBEAD\r\n");
-    for n in 1..=20 {
-        s.push_str(&format!("BUTTON: InButton=GenericUSBController_Button{n}, OutButtons=Joystick_Button{n}\r\n"));
-    }
-    // vJoy buttons 21..32 -> Throttle_Button1..12 (evilC scheme), so EVERY physical button
-    // reaches MW5 even if it sits above DI bit 19. Bind them to taste in MW5's menu.
-    for n in 21..=32 {
-        s.push_str(&format!("BUTTON: InButton=GenericUSBController_Button{n}, OutButtons=Throttle_Button{}\r\n", n - 20));
+    // vJoy buttons 1..20 -> Joystick_Button*, 21..32 -> Throttle_Button1..12 (evilC scheme)
+    // so EVERY physical button reaches MW5 even above DI bit 19. The OutButtons token comes
+    // from vjoy_target_token (the single source of truth) so the .Remap and the device-
+    // diagram resolver can never drift apart.
+    for n in 1..=32u8 {
+        let tok = vjoy_target_token(&Target::Button(n)).expect("vjoy button 1..32 maps to a token");
+        s.push_str(&format!("BUTTON: InButton=GenericUSBController_Button{n}, OutButtons={tok}\r\n"));
     }
     let dz = "Invert=FALSE, Offset=-0.5, DeadZoneMin=-0.05, DeadZoneMax=0.05, MapToDeadZone=TRUE";
-    s.push_str(&format!("AXIS: InAxis=HOTAS_XAxis, OutAxis=Joystick_Axis1, {dz}\r\n"));
-    s.push_str(&format!("AXIS: InAxis=HOTAS_YAxis, OutAxis=Joystick_Axis2, {dz}\r\n"));
-    s.push_str(&format!("AXIS: InAxis=GenericUSBController_Axis4, OutAxis=Joystick_Axis4, {dz}\r\n"));
-    s.push_str(&format!("AXIS: InAxis=GenericUSBController_Axis5, OutAxis=Joystick_Axis5, {dz}\r\n"));
-    s.push_str(&format!("AXIS: InAxis=HOTAS_ZAxis, OutAxis=Throttle_Axis2, {dz}\r\n"));
-    s.push_str(&format!("AXIS: InAxis=HOTAS_RZAxis, OutAxis=Throttle_Axis1, {dz}\r\n"));
+    // (vJoy HID input name -> vJoy axis usage). MW5 can't address Rx/Ry by name, so those two
+    // enter as the raw GenericUSBController_Axis4/5; the OutAxis token is vjoy_target_token's.
+    let axes = [
+        ("HOTAS_XAxis", crate::vjoy::HID_X),
+        ("HOTAS_YAxis", crate::vjoy::HID_Y),
+        ("GenericUSBController_Axis4", crate::vjoy::HID_RX),
+        ("GenericUSBController_Axis5", crate::vjoy::HID_RY),
+        ("HOTAS_ZAxis", crate::vjoy::HID_Z),
+        ("HOTAS_RZAxis", crate::vjoy::HID_RZ),
+    ];
+    for (inaxis, usage) in axes {
+        let tok = vjoy_target_token(&Target::Axis(usage)).expect("vjoy axis maps to a token");
+        s.push_str(&format!("AXIS: InAxis={inaxis}, OutAxis={tok}, {dz}\r\n"));
+    }
     s
+}
+
+/// SINGLE SOURCE OF TRUTH for "vJoy Target -> MW5 token". `vjoy_block()` EMITS exactly
+/// these tokens, and the device-diagram resolver READS them back, so the .Remap file and
+/// the on-screen labels can never drift. Mirrors the evilC scheme: vJoy buttons 1..20 ->
+/// Joystick_Button1..20, 21..32 -> Throttle_Button1..12; vJoy axes X/Y/Rx/Ry/Z/Rz ->
+/// Joystick_Axis1/2/4/5 + Throttle_Axis2/Axis1. `None` for a Target outside that range.
+pub fn vjoy_target_token(t: &crate::vjoy_map::Target) -> Option<String> {
+    use crate::vjoy_map::Target;
+    match *t {
+        Target::Button(n) if (1..=20).contains(&n) => Some(format!("Joystick_Button{n}")),
+        Target::Button(n) if (21..=32).contains(&n) => Some(format!("Throttle_Button{}", n - 20)),
+        Target::Button(_) => None,
+        Target::Axis(u) => Some(
+            match u {
+                crate::vjoy::HID_X => "Joystick_Axis1",
+                crate::vjoy::HID_Y => "Joystick_Axis2",
+                crate::vjoy::HID_RX => "Joystick_Axis4",
+                crate::vjoy::HID_RY => "Joystick_Axis5",
+                crate::vjoy::HID_Z => "Throttle_Axis2",
+                crate::vjoy::HID_RZ => "Throttle_Axis1",
+                _ => return None,
+            }
+            .to_string(),
+        ),
+    }
 }
 
 /// Build one START_BIND block for a known device (buttons capped at MW5's 20,
@@ -321,6 +356,51 @@ mod tests {
             .map(|b| format!("{}->{}", b.id, b.token))
             .collect();
         assert!(orphans.is_empty(), "every default binding must map to a producible token, got orphans: {orphans:?}");
+    }
+
+    #[test]
+    fn vjoy_target_token_round_trips_and_agrees_with_vjoy_block() {
+        use crate::vjoy_map::Target;
+        // key cases
+        let cases: &[(Target, &str)] = &[
+            (Target::Button(1), "Joystick_Button1"),
+            (Target::Button(20), "Joystick_Button20"),
+            (Target::Button(21), "Throttle_Button1"),
+            (Target::Button(32), "Throttle_Button12"),
+            (Target::Axis(crate::vjoy::HID_X), "Joystick_Axis1"),
+            (Target::Axis(crate::vjoy::HID_Y), "Joystick_Axis2"),
+            (Target::Axis(crate::vjoy::HID_RX), "Joystick_Axis4"),
+            (Target::Axis(crate::vjoy::HID_RY), "Joystick_Axis5"),
+            (Target::Axis(crate::vjoy::HID_Z), "Throttle_Axis2"),
+            (Target::Axis(crate::vjoy::HID_RZ), "Throttle_Axis1"),
+        ];
+        for (t, want) in cases {
+            assert_eq!(vjoy_target_token(t).as_deref(), Some(*want), "wrong token for {t:?}");
+        }
+        // out of range -> None
+        assert_eq!(vjoy_target_token(&Target::Button(0)), None);
+        assert_eq!(vjoy_target_token(&Target::Button(33)), None);
+
+        // AGREEMENT: every OutButtons=/OutAxis= token vjoy_block() emits must be one
+        // vjoy_target_token produces over buttons 1..32 + the six routed axes.
+        let mut produced = std::collections::HashSet::new();
+        for n in 1..=32u8 {
+            if let Some(t) = vjoy_target_token(&Target::Button(n)) { produced.insert(t); }
+        }
+        for u in [crate::vjoy::HID_X, crate::vjoy::HID_Y, crate::vjoy::HID_RX,
+                  crate::vjoy::HID_RY, crate::vjoy::HID_Z, crate::vjoy::HID_RZ] {
+            if let Some(t) = vjoy_target_token(&Target::Axis(u)) { produced.insert(t); }
+        }
+        for line in vjoy_block().lines() {
+            for key in ["OutButtons=", "OutAxis="] {
+                if let Some(i) = line.find(key) {
+                    let rest = &line[i + key.len()..];
+                    let end = rest.find([',', ' ', '\r', '\t']).unwrap_or(rest.len());
+                    let tok = rest[..end].trim().to_string();
+                    assert!(produced.contains(&tok), "vjoy_block emits {tok}, not reproducible from vjoy_target_token");
+                }
+            }
+        }
     }
 
     #[test]

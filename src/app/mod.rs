@@ -231,13 +231,13 @@ impl eframe::App for App {
             *last_panel_rect = ui.max_rect();
             if let Some(tex) = textures.as_ref() {
                 let filter = pending_export.as_ref();
-                crate::visual::sidebar(ui, tex, devices, games[*selected].as_ref(), show_labels, &bound, filter);
+                crate::visual::sidebar(ui, tex, devices, games[*selected].as_ref(), show_labels, &bound, vjoy_map, filter);
             } else {
                 ui.label("Loading device images…");
             }
         });
 
-        panels::central(ctx, games, *selected, textures, devices, capture, rows, actions, status, &groups);
+        panels::central(ctx, games, *selected, textures, devices, capture, rows, actions, status, vjoy_map, &groups);
 
         panels::footers(ctx, status);
 

@@ -99,6 +99,7 @@ pub(super) fn central(
     rows: &mut [Binding],
     actions: &[Action],
     status: &mut String,
+    vjoy_map: &crate::vjoy_map::VjoyMap,
     groups: &[(String, Vec<usize>)],
 ) {
     egui::CentralPanel::default().show(ctx, |ui| {
@@ -108,7 +109,7 @@ pub(super) fn central(
         }
         let p = games[selected].as_ref();
         // Live set of tokens being pressed/moved right now — drives the green glow.
-        let hot = crate::visual::hot_tokens(devices, p);
+        let hot = crate::visual::hot_tokens(devices, p, vjoy_map);
 
         ui.add_space(2.0);
         ui.horizontal(|ui| {

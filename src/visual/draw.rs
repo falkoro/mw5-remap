@@ -14,7 +14,7 @@ pub(super) fn token_hot(token: &str, hot: &[String]) -> bool {
 
 /// Draw numbered, non-overlapping callouts; a callout turns green when its token
 /// is live. Labels stack in the margin nearest each dot, ordered by height.
-pub(super) fn draw_callouts(painter: &egui::Painter, img: egui::Rect, markers: &[Marker], hot: &[String], bound: &HashMap<String, String>) {
+pub(super) fn draw_callouts(painter: &egui::Painter, img: egui::Rect, markers: &[Marker], hot: &[String], bound: &HashMap<String, String>, remap: &HashMap<String, String>) {
     let font = egui::FontId::proportional(11.0);
     let numfont = egui::FontId::proportional(10.0);
 
@@ -26,7 +26,11 @@ pub(super) fn draw_callouts(painter: &egui::Painter, img: egui::Rect, markers: &
     let place = |col: &[&Marker], on_left: bool| {
         let n = col.len();
         for (i, mk) in col.iter().enumerate() {
-            let lit = token_hot(mk.token, hot);
+            // Resolve the marker's hardcoded DIRECT token to the token MW5 actually
+            // receives: identity unless the vJoy feeder routes this control elsewhere.
+            // Both the green glow and the bound-action label key off the resolved token.
+            let token = remap.get(mk.token).map(|s| s.as_str()).unwrap_or(mk.token);
+            let lit = token_hot(token, hot);
             let col_accent = if lit { HOT } else { ACCENT };
             let dot = img.min + egui::vec2(mk.nx * img.width(), mk.ny * img.height());
 
@@ -34,9 +38,9 @@ pub(super) fn draw_callouts(painter: &egui::Painter, img: egui::Rect, markers: &
             // Show WHAT is bound: "<control> · <action>", or "(unbound)" for a
             // bindable control with nothing on it. Reference-only dots (no token)
             // just show their physical name.
-            let text = if mk.token.is_empty() {
+            let text = if token.is_empty() {
                 mk.label.to_string()
-            } else if let Some(action) = bound.get(mk.token) {
+            } else if let Some(action) = bound.get(token) {
                 format!("{} · {}", mk.label, action)
             } else {
                 format!("{} · (unbound)", mk.label)

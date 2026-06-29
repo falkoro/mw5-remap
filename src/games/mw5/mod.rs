@@ -18,7 +18,7 @@ use parse::{
 };
 
 // Keep the public path stable: games::mw5::write_hotas_mappings etc.
-pub use hotas::{hotas_path, producible_tokens, set_config_locked, write_hotas_mappings};
+pub use hotas::{hotas_path, producible_tokens, set_config_locked, vjoy_target_token, write_hotas_mappings};
 
 // Known MOZA hardware -> MW5 role (deterministic; falls back to enum order).
 const BASE: (u16, u16) = (0x346E, 0x1002); // MOZA AB6 FFB Base  -> Joystick (aim)
