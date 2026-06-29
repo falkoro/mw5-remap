@@ -142,6 +142,11 @@ fn vjoy_block() -> String {
     for n in 1..=20 {
         s.push_str(&format!("BUTTON: InButton=GenericUSBController_Button{n}, OutButtons=Joystick_Button{n}\r\n"));
     }
+    // vJoy buttons 21..32 -> Throttle_Button1..12 (evilC scheme), so EVERY physical button
+    // reaches MW5 even if it sits above DI bit 19. Bind them to taste in MW5's menu.
+    for n in 21..=32 {
+        s.push_str(&format!("BUTTON: InButton=GenericUSBController_Button{n}, OutButtons=Throttle_Button{}\r\n", n - 20));
+    }
     let dz = "Invert=FALSE, Offset=-0.5, DeadZoneMin=-0.05, DeadZoneMax=0.05, MapToDeadZone=TRUE";
     s.push_str(&format!("AXIS: InAxis=HOTAS_XAxis, OutAxis=Joystick_Axis1, {dz}\r\n"));
     s.push_str(&format!("AXIS: InAxis=HOTAS_YAxis, OutAxis=Joystick_Axis2, {dz}\r\n"));

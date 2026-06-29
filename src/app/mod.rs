@@ -200,7 +200,9 @@ impl eframe::App for App {
         if *vjoy_enabled {
             use crate::vjoy::{combine_toes, feed, feed_button, scale, HID_RX, HID_RY, HID_RZ, HID_X, HID_Y, HID_Z};
             if let Some(ab6) = devices.iter().find(|d| (d.vid, d.pid) == (0x346E, 0x1002)) {
-                for b in 0..20u8 { feed_button(b + 1, ab6.buttons & (1 << b) != 0); }
+                // Mirror ALL 32 DI buttons (the AB6's physical buttons can sit at any bit) so
+                // none is lost. vJoy 1-20 -> Joystick_Button1..20, 21-32 -> Throttle_Button1..12.
+                for b in 0..32u8 { feed_button(b + 1, ab6.buttons & (1u32 << b) != 0); }
                 feed(HID_X, scale(ab6.axes[0])); // gimbal X -> Joystick_Axis1 (aim)
                 feed(HID_Y, scale(ab6.axes[1])); // gimbal Y -> Joystick_Axis2 (aim)
                 feed(HID_RX, scale(ab6.axes[3])); // thumb hat Rx -> Joystick_Axis4 (look)
