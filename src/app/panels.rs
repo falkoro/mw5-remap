@@ -79,18 +79,20 @@ pub(super) fn footers(ctx: &egui::Context) {
 pub(super) fn notif_feed(ctx: &egui::Context, log: &mut Vec<String>, collapsed: &mut bool, shifted: bool) {
     if log.is_empty() { return; }
     let accent = super::widgets::LIVE;
+    let card = egui::Color32::from_rgb(30, 34, 46); // same dark fill as the update toast / popups
     let top = if shifted { 102.0 } else { 12.0 };
 
-    // Collapsed: render ONLY a small clickable bell badge with the history count.
+    // Collapsed: a clean rounded PILL with the bell + history count (not a bare emoji).
     if *collapsed {
         egui::Area::new(egui::Id::new("notif_feed"))
             .order(egui::Order::Foreground)
             .anchor(egui::Align2::RIGHT_TOP, egui::vec2(-12.0, top))
             .show(ctx, |ui| {
-                let badge = egui::Button::new(egui::RichText::new(format!("🔔 {}", log.len())).strong().color(accent))
-                    .fill(egui::Color32::from_rgb(30, 34, 46))
+                let badge = egui::Button::new(egui::RichText::new(format!("🔔 {}", log.len())).strong().size(13.0).color(accent))
+                    .fill(card)
                     .stroke(egui::Stroke::new(1.0, accent))
-                    .rounding(egui::Rounding::same(8.0));
+                    .rounding(egui::Rounding::same(14.0)) // high rounding => pill
+                    .min_size(egui::vec2(46.0, 26.0));
                 if ui.add(badge).on_hover_text("Show notifications").clicked() { *collapsed = false; }
             });
         return;
@@ -101,43 +103,42 @@ pub(super) fn notif_feed(ctx: &egui::Context, log: &mut Vec<String>, collapsed: 
         .order(egui::Order::Foreground)
         .anchor(egui::Align2::RIGHT_TOP, egui::vec2(-12.0, top))
         .show(ctx, |ui| {
-            // newest first: iterate the tail in reverse, brightest at the top.
+            // newest first: iterate the tail in reverse, brightest card at the top.
             for (depth, msg) in log.iter().rev().take(6).enumerate() {
-                let fade = 1.0 - (depth as f32 * 0.13); // 1.0 (newest) -> ~0.35
-                let txt_col = if depth == 0 {
+                let newest = depth == 0;
+                let fade = 1.0 - (depth as f32 * 0.13);
+                let txt_col = if newest {
                     egui::Color32::from_rgb(228, 234, 242)
                 } else {
-                    let g = (170.0 * fade).clamp(95.0, 200.0) as u8;
-                    egui::Color32::from_rgb(g.saturating_add(20), g.saturating_add(26), g.saturating_add(40))
+                    let g = (170.0 * fade).clamp(120.0, 200.0) as u8;
+                    egui::Color32::from_rgb(g, g.saturating_add(8), g.saturating_add(20))
                 };
-                let stroke = if depth == 0 {
-                    egui::Stroke::new(1.0, accent)
-                } else {
-                    egui::Stroke::new(1.0, egui::Color32::from_rgb(56, 62, 78))
-                };
-                let size = 13.5 - depth as f32 * 0.9; // newest biggest
+                // The newest card carries the green LIVE accent stroke; older ones a quiet rim.
+                let stroke = if newest { egui::Stroke::new(1.5, accent) }
+                             else { egui::Stroke::new(1.0, egui::Color32::from_rgb(56, 62, 78)) };
+                let size = if newest { 13.5 } else { 12.5 }; // consistent with the rest of the UI
                 egui::Frame::popup(ui.style())
-                    .fill(if depth == 0 { egui::Color32::from_rgb(30, 34, 46) } else { egui::Color32::from_rgb(25, 28, 38) })
+                    .fill(if newest { card } else { egui::Color32::from_rgb(25, 28, 38) })
                     .stroke(stroke)
-                    .rounding(egui::Rounding::same(8.0))
-                    .inner_margin(egui::Margin::symmetric(12.0, depth.min(1) as f32 * -1.0 + 7.0))
+                    .rounding(egui::Rounding::same(10.0)) // same family as the update toast
+                    .inner_margin(egui::Margin::symmetric(12.0, 8.0))
                     .show(ui, |ui| {
                         ui.set_max_width(300.0);
                         ui.horizontal(|ui| {
                             let rt = egui::RichText::new(msg.as_str()).size(size).color(txt_col);
-                            ui.label(if depth == 0 { rt.strong() } else { rt });
+                            ui.label(if newest { rt.strong() } else { rt });
                             // dismiss (and, on the newest card, collapse) pinned to the right.
                             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                                 if ui.small_button("✕").on_hover_text("Dismiss this notification").clicked() {
                                     dismiss = Some(log.len() - 1 - depth);
                                 }
-                                if depth == 0 && ui.small_button("–").on_hover_text("Collapse the feed").clicked() {
+                                if newest && ui.small_button("–").on_hover_text("Collapse the feed").clicked() {
                                     *collapsed = true;
                                 }
                             });
                         });
                     });
-                ui.add_space(4.0);
+                ui.add_space(5.0);
             }
         });
     if let Some(i) = dismiss { if i < log.len() { log.remove(i); } }
@@ -241,6 +242,6 @@ pub(super) fn legend(ui: &mut egui::Ui) {
         ui.label(egui::RichText::new("Devices:").color(TEXT_MAIN));
         chip(ui, super::widgets::STICK_COL, "Stick / Joystick");
         chip(ui, super::widgets::THROTTLE_COL, "Throttle / Pedals");
-        chip(ui, super::widgets::LIVE, "active now");
+        chip(ui, super::widgets::LIVE, "lit = in use");
     });
 }

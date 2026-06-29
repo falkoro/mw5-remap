@@ -113,8 +113,10 @@ pub(super) fn binding_row(
     let lbl_col = if capturing { CAP_TXT } else if live { LIVE_TXT } else { TEXT_MAIN };
     ui.colored_label(lbl_col, &actions[i].label);
 
-    // the chip: a big colour-coded button. Colour = which device; click = re-bind.
-    let (text, fill) = if capturing {
+    // The chip: a polished, rounded, role-coloured button. Colour identifies the device;
+    // bound / unbound / live / capturing each get a distinct fill + border; click = re-bind.
+    let empty = token.is_empty() && !capturing;
+    let (text, base) = if capturing {
         ("press a control…".to_string(), CAPTURING)
     } else if live {
         (pretty_token(&token), LIVE)
@@ -123,19 +125,22 @@ pub(super) fn binding_row(
     } else {
         (pretty_token(&token), device_color(&token))
     };
-    let txt_col = if token.is_empty() && !capturing { egui::Color32::from_rgb(120, 128, 145) } else { egui::Color32::from_rgb(15, 18, 24) };
-    // a rounded, slightly raised "chip" — nicer than a flat box
-    let stroke = if live { egui::Stroke::new(2.0, egui::Color32::from_rgb(30, 120, 60)) }
-                 else if token.is_empty() { egui::Stroke::new(1.0, egui::Color32::from_rgb(150, 158, 175)) }
-                 else { egui::Stroke::new(1.0, fill.linear_multiply(0.6)) };
+    // Unbound chips read as a quiet empty "slot"; bound/live chips are richly filled.
+    let fill = if empty { egui::Color32::from_rgb(44, 48, 60) } else { base };
+    let txt_col = if empty { egui::Color32::from_rgb(150, 158, 175) } else { egui::Color32::from_rgb(15, 18, 24) };
+    // Lighter, role-tinted border lifts the chip off the row; a bright rim sells the glow.
+    let stroke = if live { egui::Stroke::new(2.0, egui::Color32::from_rgb(150, 255, 190)) }
+                 else if empty { egui::Stroke::new(1.0, egui::Color32::from_rgb(92, 100, 118)) }
+                 else { egui::Stroke::new(1.5, lighten(base, 0.35)) };
     let chip = egui::Button::new(egui::RichText::new(text).color(txt_col).strong().size(14.0))
         .fill(fill)
         .stroke(stroke)
-        .rounding(egui::Rounding::same(8.0))
+        .rounding(egui::Rounding::same(9.0))
         .min_size(egui::vec2(158.0, 30.0));
     // chip + a dim "which joystick" hint share one grid cell (keeps the 4-column layout).
     let clicked = ui.horizontal(|ui| {
         let resp = ui.add(chip).on_hover_text("Click, then press the control / move the axis. Esc cancels.");
+        chip_polish(ui, &resp, fill, live, empty); // faux-gradient sheen + hover brighten
         if !token.is_empty() && !capturing {
             if let Some(dev) = crate::visual::token_device(&token, vjoy_map, devices) {
                 ui.label(egui::RichText::new(format!("· {dev}")).size(10.5).color(egui::Color32::from_rgb(120, 128, 145)))
@@ -186,57 +191,24 @@ pub(super) fn binding_row(
     ui.end_row();
 }
 
-const HAT_ARROWS: [&str; 8] = ["↑", "↗", "→", "↘", "↓", "↙", "←", "↖"];
-
-/// Live "what control is actuated right now" for the readout under the tab bar.
-/// Buttons + hat only — NO axis detection: the app feeds the vJoy device's axes
-/// every frame and idle/noisy physical axes jitter, so any most-moved-axis test
-/// false-positives constantly. Returns the body that follows "Detected: ", which
-/// now also resolves the physical control through vJoy + the bound action, e.g.
-/// `MOZA AB6 — Button 5  →  vJoy Button 5 · Fire Weapon Group 1`. None when idle.
-pub(super) fn detect_input(
-    devices: &[input::Device],
-    muted: &HashSet<(u16, u16)>,
-    p: &dyn GameProvider,
-    vjoy_map: &VjoyMap,
-    bound: &HashMap<String, String>,
-) -> Option<String> {
-    use crate::vjoy_map::Source;
-    for (idx, d) in devices.iter().enumerate() {
-        if muted.contains(&(d.vid, d.pid)) { continue; } // soft-muted from the LIVE display
-        if let Some(&b) = d.pressed_buttons().first() {
-            let head = format!("{} — Button {}", d.name, b);
-            let direct = p.button_token(d, b, idx);
-            let resolved = crate::visual::resolved_token(p, d, idx, Source::Button(b.saturating_sub(1) as u8), vjoy_map);
-            return Some(with_result(head, direct, resolved, bound));
-        }
-        if let Some(oct) = d.pov_octant() {
-            let head = format!("{} — Hat {}", d.name, HAT_ARROWS[(oct as usize - 1) & 7]);
-            let direct = p.pov_token(d, oct, idx);
-            // resolved_token has no single token for a whole hat unless vJoy routes it,
-            // so fall back to the direct hat token to still show the result + action.
-            let resolved = crate::visual::resolved_token(p, d, idx, Source::Pov, vjoy_map)
-                .or_else(|| direct.clone());
-            return Some(with_result(head, direct, resolved, bound));
-        }
-    }
-    None
+/// Lighten a colour toward white by `t` (0..1) — for chip borders / the gloss sheen.
+pub(super) fn lighten(c: egui::Color32, t: f32) -> egui::Color32 {
+    let mix = |a: u8| (a as f32 + (255.0 - a as f32) * t) as u8;
+    egui::Color32::from_rgb(mix(c.r()), mix(c.g()), mix(c.b()))
 }
 
-/// Append the vJoy RESULT (resolved MW5 token + bound action) to a physical-control
-/// readout: `… → vJoy Button 5 · Fire Weapon Group 1`. The `vJoy ` prefix shows only
-/// when the resolved token differs from the control's direct token (i.e. the feeder
-/// remaps it); the action half is omitted when the token is unbound.
-fn with_result(head: String, direct: Option<String>, resolved: Option<String>, bound: &HashMap<String, String>) -> String {
-    let tok = match resolved { Some(t) if !t.is_empty() => t, _ => return head };
-    let name = if direct.as_deref() == Some(tok.as_str()) {
-        pretty_token(&tok)
-    } else {
-        format!("vJoy {}", pretty_token(&tok))
-    };
-    match bound.get(&tok) {
-        Some(action) => format!("{head}  →  {name} · {action}"),
-        None => format!("{head}  →  {name}"),
+/// Paint a faint top-edge bevel (a cheap faux-gradient sheen) and a hover brighten over a
+/// chip that's already been drawn — gives the flat egui button a richer, raised feel
+/// without a real gradient mesh. No-op styling only; never affects click/capture.
+fn chip_polish(ui: &egui::Ui, resp: &egui::Response, fill: egui::Color32, live: bool, empty: bool) {
+    let r = resp.rect;
+    let p = ui.painter_at(r);
+    if !empty && r.width() > 18.0 {
+        let hl = lighten(fill, if live { 0.5 } else { 0.32 }).linear_multiply(0.7);
+        p.hline(egui::Rangef::new(r.min.x + 7.0, r.max.x - 7.0), r.min.y + 2.0, egui::Stroke::new(1.5, hl));
+    }
+    if resp.hovered() {
+        p.rect_filled(r, egui::Rounding::same(9.0), egui::Color32::from_rgba_unmultiplied(255, 255, 255, 16));
     }
 }
 

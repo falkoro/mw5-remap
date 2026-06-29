@@ -20,7 +20,7 @@ use crate::input::Device;
 use crate::vjoy_map::VjoyMap;
 use devices_markers::{BASE_MARKERS, MHG_HATS, MHG_MARKERS, MHG_MULTI, PEDAL_MARKERS, VKB_HATS, VKB_MARKERS};
 use draw::{draw_callouts, draw_hats, draw_multi_callouts};
-pub use resolve::{resolved_token, token_device};
+pub use resolve::token_device;
 use eframe::egui;
 use std::collections::{HashMap, HashSet};
 
@@ -271,9 +271,6 @@ pub fn sidebar(
     // direct token is two hops from MW5, so resolve it to what the game really receives.
     // EMPTY when vJoy is off => callouts behave exactly as before.
     let remap = resolve::vjoy_token_remap(p, devices, vjoy_map);
-    let mut readout = hot.clone();
-    readout.sort();
-    readout.dedup();
 
     let edit = layout::edit_enabled();
     ui.horizontal(|ui| {
@@ -289,15 +286,16 @@ pub fn sidebar(
         }
     });
     ui.add_space(2.0);
-    ui.strong("Active now");
-    if readout.is_empty() {
-        ui.label(egui::RichText::new("press a button or move an axis…").weak());
-    } else {
-        ui.horizontal_wrapped(|ui| {
-            for t in &readout {
-                ui.label(egui::RichText::new(format!("🟢 {t}")).color(HOT));
-            }
-        });
+    // FINDABLE raw-axis readout: a clear, always-visible collapsible header pinned right
+    // under the Devices/Arrows row (collapsed by default). Expand it to watch the live
+    // value of every axis while testing — no need to hunt to the bottom of the scroll.
+    // The single live "what am I pressing" readout now lives only in the top Detected line.
+    if filter.is_none() {
+        egui::CollapsingHeader::new(egui::RichText::new("Live axes").strong())
+            .default_open(false)
+            .show(ui, |ui| live_axes(ui, devices, p))
+            .header_response
+            .on_hover_text("Raw value of every axis on every device — find your axis while testing.");
     }
     ui.separator();
 
@@ -332,18 +330,6 @@ pub fn sidebar(
         if filter.is_none() {
             ui.add_space(6.0);
             image_block(ui, "VKB Gladiator EVO", &tex.vkb, iw, VKB_MARKERS, &[], VKB_HATS, &hot, vkb_oct, markers_visible, bound, &remap, "vkb", edit);
-        }
-        // Raw axis readout: the actual winmm value of every axis on every device, each
-        // labelled with the Joystick/Throttle token it binds to. Binding-independent —
-        // if a bar moves, the tool is reading that axis (and you can see which token to
-        // bind). Tucked BELOW the device images and COLLAPSED by default so it stays out
-        // of the way until you actually want the raw metrics.
-        if filter.is_none() {
-            ui.add_space(8.0);
-            ui.separator();
-            egui::CollapsingHeader::new("Live axes (raw)").default_open(false).show(ui, |ui| {
-                live_axes(ui, devices, p);
-            });
         }
     });
 }

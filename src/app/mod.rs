@@ -4,6 +4,7 @@
 //! Toolbar/banner/footer chrome lives in `panels`; the grid row + colours in `widgets`.
 
 mod community_ui;
+mod detect;
 mod export_ui;
 mod panels;
 mod tabs;
@@ -253,7 +254,7 @@ impl eframe::App for App {
         // Live "Detected:" readout — which stick + control is actuated this frame,
         // resolved through vJoy to the MW5 token + bound action. Shown under the tab
         // bar (below), so it's visible in BOTH tabs at once.
-        let detected = widgets::detect_input(devices, live_muted, games[*selected].as_ref(), vjoy_map, &bound);
+        let detected = detect::detect_input(devices, live_muted, games[*selected].as_ref(), vjoy_map, &bound);
 
         // Top-level tab selector — ABOVE everything else. Bind = the editor; vJoy
         // Setup = the routing UI. The feed loop above runs regardless of tab.
