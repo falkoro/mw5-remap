@@ -43,6 +43,12 @@ pub fn token_device(token: &str, vjoy_map: &VjoyMap, devices: &[Device]) -> Opti
             return Some("vJoy".to_string());
         }
     }
+    // The POV hat routes onto the vJoy POV, which MW5 names Joystick_Hat_1..8 — those hat
+    // tokens aren't in vjoy_target_token's button/axis space, so recognise them directly
+    // whenever a POV mapping exists in the table.
+    if token.contains("_Hat_") && vjoy_map.mappings.iter().any(|m| m.target == Target::Pov) {
+        return Some("vJoy".to_string());
+    }
     // No vJoy mapping: name the connected device whose registry role matches the token.
     let role = if token.starts_with("Joystick") { crate::games::Role::Joystick }
                else if token.starts_with("Throttle") { crate::games::Role::Throttle }
