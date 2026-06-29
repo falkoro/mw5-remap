@@ -20,6 +20,8 @@ pub enum Source {
     /// Two axes combined into ONE bipolar output: (forward/positive index, reverse/negative index).
     /// e.g. two toe pedals -> one centred throttle (forward toe up, reverse toe down).
     Pair(u8, u8),
+    /// The device's whole digital POV hat (no index) -> the vJoy POV.
+    Pov,
 }
 
 /// A vJoy output: a button (1..128) or an axis (by HID usage id, e.g. `HID_X`).
@@ -27,6 +29,8 @@ pub enum Source {
 pub enum Target {
     Button(u8),
     Axis(u32),
+    /// The vJoy device's POV (no index). Fed from a physical POV hat.
+    Pov,
 }
 
 /// One physical-input -> vJoy-output routing for a device identified by VID/PID.
@@ -67,6 +71,7 @@ impl Source {
             Source::Button(b) => format!("Button {}", b + 1),
             Source::Axis(a) => format!("Axis {}", a + 1),
             Source::Pair(p, n) => format!("Axes {}+ / {}-", p + 1, n + 1),
+            Source::Pov => "POV hat".into(),
         }
     }
     fn encode(&self) -> String {
@@ -74,9 +79,12 @@ impl Source {
             Source::Button(b) => format!("B{b}"),
             Source::Axis(a) => format!("A{a}"),
             Source::Pair(p, n) => format!("P{p}.{n}"),
+            Source::Pov => "H".into(),
         }
     }
     fn decode(s: &str) -> Option<Source> {
+        // `H` = the whole digital POV hat.
+        if s == "H" { return Some(Source::Pov); }
         // `P{p}.{n}` = bipolar axis pair (both indices 0..7).
         if let Some(rest) = s.strip_prefix('P') {
             let (p, n) = rest.split_once('.')?;
@@ -99,15 +107,18 @@ impl Target {
         match self {
             Target::Button(b) => format!("vJoy Button {b}"),
             Target::Axis(u) => format!("vJoy Axis {}", axis_name(*u)),
+            Target::Pov => "vJoy POV".into(),
         }
     }
     fn encode(&self) -> String {
         match self {
             Target::Button(b) => format!("B{b}"),
             Target::Axis(u) => format!("A{u}"),
+            Target::Pov => "H".into(),
         }
     }
     fn decode(s: &str) -> Option<Target> {
+        if s == "H" { return Some(Target::Pov); }
         let rest = s.get(1..)?;
         match s.as_bytes().first()? {
             b'B' => Some(Target::Button(rest.parse().ok()?)),
@@ -123,6 +134,8 @@ impl Target {
 pub enum Call {
     Button(u8, bool),
     Axis(u32, i32),
+    /// Continuous POV value: centi-degrees 0..=35999, or -1 to centre.
+    Pov(i32),
 }
 
 fn map_path() -> PathBuf {
@@ -235,8 +248,14 @@ impl VjoyMap {
                     let (fwd, rev) = (axis(p), axis(n));
                     Call::Axis(u, if m.invert { vjoy::combine_toes(rev, fwd) } else { vjoy::combine_toes(fwd, rev) })
                 }
-                // A bipolar pair only makes sense onto an axis; skip anything else.
-                (Source::Pair(_, _), Target::Button(_)) => continue,
+                // Whole digital POV hat -> the vJoy POV. Centred (0xFFFFFFFF / >35999)
+                // becomes -1 (vJoy "centre"); a real angle passes through unchanged.
+                (Source::Pov, Target::Pov) => {
+                    let value = if dev.pov == 0xFFFF_FFFF || dev.pov > 35999 { -1 } else { dev.pov as i32 };
+                    Call::Pov(value)
+                }
+                // Any other combination involving Pair/Pov is meaningless; skip it.
+                _ => continue,
             });
         }
         out
@@ -248,6 +267,7 @@ impl VjoyMap {
             match c {
                 Call::Button(b, on) => { vjoy::feed_button(b, on); }
                 Call::Axis(u, v) => { vjoy::feed(u, v); }
+                Call::Pov(v) => { vjoy::feed_pov(v); }
             }
         }
     }
@@ -303,6 +323,30 @@ mod tests {
         // reverse axis high -> below centre
         let mut rev = dev(0x346E, 0x1200); rev.axes[1] = 65535;
         assert!(axis_val(rev) < vjoy::VJOY_CENTRE, "reverse toe should push below centre");
+    }
+
+    #[test]
+    fn pov_line_round_trips() {
+        let m = Mapping { vid: 0x346E, pid: 0x1002, source: Source::Pov,
+            target: Target::Pov, invert: false };
+        let line = encode_line(&m);
+        assert_eq!(line.split('\t').nth(2), Some("H"), "POV source encodes as H");
+        assert_eq!(line.split('\t').nth(3), Some("H"), "POV target encodes as H");
+        assert_eq!(parse_line(&line).expect("parse"), m, "round-trip failed for {line:?}");
+    }
+
+    #[test]
+    fn resolve_pov_centre_and_angle() {
+        let map = VjoyMap { mappings: vec![
+            Mapping { vid: 0x346E, pid: 0x1002, source: Source::Pov,
+                target: Target::Pov, invert: false },
+        ] };
+        // centered hat (0xFFFFFFFF) -> -1
+        let mut c = dev(0x346E, 0x1002); c.pov = 0xFFFF_FFFF;
+        assert_eq!(map.resolve(&[c]).as_slice(), &[Call::Pov(-1)]);
+        // a real angle passes through unchanged
+        let mut a = dev(0x346E, 0x1002); a.pov = 9000;
+        assert_eq!(map.resolve(&[a]).as_slice(), &[Call::Pov(9000)]);
     }
 
     #[test]

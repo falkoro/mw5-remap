@@ -43,6 +43,7 @@ type FnStatus = unsafe extern "C" fn(u32) -> i32; // 0=Own,1=Free,2=Busy,3=Miss,
 type FnAcquire = unsafe extern "C" fn(u32) -> i32;
 type FnSetAxis = unsafe extern "C" fn(i32, u32, u32) -> i32;
 type FnSetBtn = unsafe extern "C" fn(i32, u32, u8) -> i32; // (value, rID, nBtn 1-based)
+type FnSetPov = unsafe extern "C" fn(i32, u32, u8) -> i32; // (value centi-deg or -1, rID, nPov 1-based)
 
 struct Api {
     enabled: FnEnabled,
@@ -50,6 +51,7 @@ struct Api {
     acquire: FnAcquire,
     set_axis: FnSetAxis,
     set_btn: FnSetBtn,
+    set_pov: FnSetPov,
 }
 
 fn load_api() -> Option<Api> {
@@ -71,13 +73,15 @@ fn load_api() -> Option<Api> {
         };
         let (e, s, a, sa) = (get("vJoyEnabled"), get("GetVJDStatus"), get("AcquireVJD"), get("SetAxis"));
         let sb = get("SetBtn");
-        if e.is_null() || s.is_null() || a.is_null() || sa.is_null() || sb.is_null() { return None; }
+        let sp = get("SetContPov");
+        if e.is_null() || s.is_null() || a.is_null() || sa.is_null() || sb.is_null() || sp.is_null() { return None; }
         Some(Api {
             enabled: std::mem::transmute::<FarProc, FnEnabled>(e),
             status: std::mem::transmute::<FarProc, FnStatus>(s),
             acquire: std::mem::transmute::<FarProc, FnAcquire>(a),
             set_axis: std::mem::transmute::<FarProc, FnSetAxis>(sa),
             set_btn: std::mem::transmute::<FarProc, FnSetBtn>(sb),
+            set_pov: std::mem::transmute::<FarProc, FnSetPov>(sp),
         })
     }
 }
@@ -141,6 +145,21 @@ pub fn feed_button(btn: u8, pressed: bool) -> bool {
             if !fd.acquired { return false; }
         }
         (fd.api.set_btn)(if pressed { 1 } else { 0 }, fd.rid, btn) != 0
+    }, false)
+}
+
+/// Set vJoy device-1 continuous POV 1 to `value` (centi-degrees 0..=35999, or -1 to
+/// centre). Acquires if needed. Lets a physical digital hat reach the game as a vJoy
+/// POV (MW5's `Joystick_Hat_1..8`) so the physical device can stay hidden.
+pub fn feed_pov(value: i32) -> bool {
+    with_feeder(|fd| unsafe {
+        if (fd.api.enabled)() == 0 { return false; }
+        if !fd.acquired {
+            let st = (fd.api.status)(fd.rid);
+            if st == 0 || st == 1 { fd.acquired = (fd.api.acquire)(fd.rid) != 0; }
+            if !fd.acquired { return false; }
+        }
+        (fd.api.set_pov)(value, fd.rid, 1) != 0
     }, false)
 }
 

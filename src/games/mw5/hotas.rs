@@ -148,6 +148,11 @@ fn vjoy_block() -> String {
         let tok = vjoy_target_token(&Target::Button(n)).expect("vjoy button 1..32 maps to a token");
         s.push_str(&format!("BUTTON: InButton=GenericUSBController_Button{n}, OutButtons={tok}\r\n"));
     }
+    // vJoy POV hat -> Joystick_Hat_1..8 (8 directions). Lets a physical coolie hat
+    // routed onto the vJoy POV reach MW5 as a hat, with the physical device hidden.
+    for n in 1..=8u8 {
+        s.push_str(&format!("BUTTON: InButton=GenericUSBController_Hat{n}, OutButtons=Joystick_Hat_{n}\r\n"));
+    }
     let dz = "Invert=FALSE, Offset=-0.5, DeadZoneMin=-0.05, DeadZoneMax=0.05, MapToDeadZone=TRUE";
     // (vJoy HID input name -> vJoy axis usage). MW5 can't address Rx/Ry by name, so those two
     // enter as the raw GenericUSBController_Axis4/5; the OutAxis token is vjoy_target_token's.
@@ -177,6 +182,9 @@ pub fn vjoy_target_token(t: &crate::vjoy_map::Target) -> Option<String> {
         Target::Button(n) if (1..=20).contains(&n) => Some(format!("Joystick_Button{n}")),
         Target::Button(n) if (21..=32).contains(&n) => Some(format!("Throttle_Button{}", n - 20)),
         Target::Button(_) => None,
+        // The vJoy POV's 8 directions are emitted directly as Joystick_Hat_1..8 by
+        // vjoy_block(); there is no single token for the whole hat.
+        Target::Pov => None,
         Target::Axis(u) => Some(
             match u {
                 crate::vjoy::HID_X => "Joystick_Axis1",
@@ -391,6 +399,8 @@ mod tests {
                   crate::vjoy::HID_RY, crate::vjoy::HID_Z, crate::vjoy::HID_RZ] {
             if let Some(t) = vjoy_target_token(&Target::Axis(u)) { produced.insert(t); }
         }
+        // vjoy_block() also emits the 8 POV-hat directions directly (no single Target).
+        for n in 1..=8 { produced.insert(format!("Joystick_Hat_{n}")); }
         for line in vjoy_block().lines() {
             for key in ["OutButtons=", "OutAxis="] {
                 if let Some(i) = line.find(key) {
