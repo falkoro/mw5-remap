@@ -11,6 +11,7 @@ mod export;
 mod games;
 mod hidhide;
 mod input;
+mod mcp;
 mod profiles;
 mod sys;
 mod update;
@@ -22,6 +23,10 @@ use eframe::egui;
 
 fn main() -> eframe::Result<()> {
     update::cleanup(); // remove leftover .old.exe from a previous self-update
+    if std::env::args().any(|a| a == "--mcp") {
+        mcp::run();
+        return Ok(());
+    }
     if std::env::args().any(|a| a == "--selftest") {
         cli::selftest();
         return Ok(());
