@@ -3,6 +3,7 @@
 //! button/axis becomes the binding. Devices/HidHide/launch live in the side modules.
 //! Toolbar/banner/footer chrome lives in `panels`; the grid row + colours in `widgets`.
 
+mod community_ui;
 mod export_ui;
 mod panels;
 mod toolbar;
@@ -49,6 +50,8 @@ pub struct App {
     vjoy_btn_pick: u8,                  // vJoy button number the next bind targets
     vjoy_axis_pick: u32,                // vJoy axis (HID usage) the next bind targets
     vjoy_paused: bool,                  // pause feeding without deleting mappings
+    show_community: bool,               // "🌐 Community profiles" browser open?
+    community: Arc<Mutex<crate::community::CommunityState>>, // async listing fetch result
 }
 
 impl App {
@@ -96,6 +99,8 @@ impl App {
             vjoy_btn_pick: 1,
             vjoy_axis_pick: crate::vjoy::HID_X,
             vjoy_paused: false,
+            show_community: false,
+            community: Arc::new(Mutex::new(crate::community::CommunityState::Idle)),
         };
         app.load_selected();
         app.crash_recover();
@@ -198,7 +203,7 @@ impl eframe::App for App {
             }
         }
 
-        let App { games, selected, actions, rows, devices, capture, status, elevated, hidden, hide_state, textures, show_labels, update, show_export_dialog, export_opts, pending_export, export_shot_sent, last_panel_rect, profile, profile_input, vjoy_map, vjoy_sel, vjoy_capture, vjoy_btn_pick, vjoy_axis_pick, vjoy_paused } = self;
+        let App { games, selected, actions, rows, devices, capture, status, elevated, hidden, hide_state, textures, show_labels, update, show_export_dialog, export_opts, pending_export, export_shot_sent, last_panel_rect, profile, profile_input, vjoy_map, vjoy_sel, vjoy_capture, vjoy_btn_pick, vjoy_axis_pick, vjoy_paused, show_community, community } = self;
 
         // token -> bound action label, so the device diagram can show WHAT is bound
         // to each control (not just the control's name).
@@ -216,7 +221,10 @@ impl eframe::App for App {
         if vjoy_active { vjoy_map.apply(devices); }
 
         panels::update_banner(ctx, status, update);
-        let reload = toolbar::top_bar(ctx, games, selected, rows, actions, status, *elevated, hidden, hide_state, show_export_dialog, profile, profile_input);
+        let reload = toolbar::top_bar(ctx, games, selected, rows, actions, status, *elevated, hidden, hide_state, show_export_dialog, profile, profile_input, show_community, community);
+        if *show_community {
+            community_ui::dialog(ctx, show_community, community, &games[*selected].name().to_string(), status);
+        }
         vjoy_ui::panel(ctx, devices, vjoy_map, vjoy_capture, vjoy_sel, vjoy_btn_pick, vjoy_axis_pick, vjoy_paused, status);
 
         egui::SidePanel::left("devices").resizable(true).default_width(440.0).show(ctx, |ui| {

@@ -4,10 +4,12 @@
 //! each file stays within the size budget; it touches only the app state passed in.
 
 use super::widgets::{file_name, persist};
+use crate::community::CommunityState;
 use crate::games::{Action, Binding, GameProvider};
 use crate::{hidhide, sys};
 use eframe::egui;
 use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
 
 /// The top toolbar: game picker plus every action button. Returns `true` if the
 /// user requested a reload (game switch or "Load current"), which the caller acts
@@ -26,6 +28,8 @@ pub(super) fn top_bar(
     show_export_dialog: &mut bool,
     profile: &mut String,
     profile_input: &mut String,
+    show_community: &mut bool,
+    community: &Arc<Mutex<CommunityState>>,
 ) -> bool {
     let mut reload = false;
     egui::TopBottomPanel::top("top").show(ctx, |ui| {
@@ -121,6 +125,12 @@ pub(super) fn top_bar(
                 .on_hover_text("Export the device images (with callouts) as PNG and/or PDF").clicked()
             {
                 *show_export_dialog = true;
+            }
+            if ui.button("🌐 Community profiles")
+                .on_hover_text("Browse & download binding profiles shared by other players").clicked()
+            {
+                *show_community = true;
+                crate::community::start_load(community, &game_name);
             }
             ui.separator();
             let p = games[*selected].as_ref();

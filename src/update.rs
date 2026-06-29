@@ -67,6 +67,18 @@ fn https_get(host: &str, path: &str, extra_headers: &str) -> Option<Vec<u8>> {
     }
 }
 
+/// Public WinHTTP GET by full `https://host/path` URL — returns the raw body bytes.
+/// Reused by the community-profiles browser so all networking shares one code path.
+pub fn http_get_bytes(url: &str, extra_headers: &str) -> Option<Vec<u8>> {
+    let (host, path) = split_url(url)?;
+    https_get(&host, &path, extra_headers)
+}
+
+/// Public WinHTTP GET by full URL, decoded lossily to a String (for JSON parsing).
+pub fn http_get(url: &str, extra_headers: &str) -> Option<String> {
+    http_get_bytes(url, extra_headers).map(|b| String::from_utf8_lossy(&b).into_owned())
+}
+
 fn json_str(s: &str, key: &str) -> Option<String> {
     let needle = format!("\"{key}\":\"");
     let i = s.find(&needle)? + needle.len();

@@ -16,11 +16,22 @@ fn root() -> PathBuf {
 }
 
 /// Filesystem-safe folder name for a game (e.g. "MechWarrior 5" -> "MechWarrior_5").
-fn game_key(game: &str) -> String {
+/// Also used as the GitHub folder name for the community-profiles browser.
+pub fn game_key(game: &str) -> String {
     game.chars().map(|c| if c.is_ascii_alphanumeric() { c } else { '_' }).collect()
 }
 
 fn dir(game: &str) -> PathBuf { root().join(game_key(game)) }
+
+/// Destination path for an imported/downloaded `.profile` (creates the game dir).
+/// Used by the community browser to drop a downloaded profile into the user's folder.
+pub fn import_path(game: &str, name: &str) -> Result<PathBuf, String> {
+    let name = safe_name(name);
+    if name.is_empty() { return Err("Invalid profile name.".into()); }
+    let d = dir(game);
+    std::fs::create_dir_all(&d).map_err(|e| e.to_string())?;
+    Ok(d.join(format!("{name}.profile")))
+}
 
 /// Sanitised, trimmed profile name (keeps letters/digits/space/-/_).
 pub fn safe_name(name: &str) -> String {

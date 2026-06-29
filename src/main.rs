@@ -3,6 +3,7 @@
 
 mod app;
 mod cli;
+mod community;
 mod devices;
 mod diagram;
 mod dinput;
