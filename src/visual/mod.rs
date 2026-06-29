@@ -11,6 +11,7 @@
 //! the pure painting helpers live in `draw`.
 
 mod draw;
+mod layout;
 
 use crate::games::GameProvider;
 use crate::input::Device;
@@ -212,7 +213,7 @@ fn live_axes(ui: &mut egui::Ui, devices: &[Device], p: &dyn GameProvider) {
 fn image_block(
     ui: &mut egui::Ui, caption: &str, tex: &egui::TextureHandle, w: f32,
     markers: &[Marker], hats: &[(f32, f32, u8)], hot: &[String], octant: Option<u32>, show: bool,
-    bound: &HashMap<String, String>,
+    bound: &HashMap<String, String>, device_key: &str, edit: bool,
 ) {
     ui.add_space(8.0);
     ui.strong(caption);
@@ -221,8 +222,14 @@ fn image_block(
     let painter = ui.painter_at(rect);
     painter.image(tex.id(), rect, egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)), egui::Color32::WHITE);
     if show {
+        // Apply any saved drag overrides, then paint/interact at the resolved positions.
+        let resolved: Vec<Marker> = markers.iter().map(|mk| {
+            let (nx, ny) = layout::resolved_pos(device_key, mk);
+            m(nx, ny, mk.num, mk.label, mk.token)
+        }).collect();
         draw_hats(&painter, rect, hats, octant);
-        draw_callouts(&painter, rect, markers, hot, bound);
+        draw_callouts(&painter, rect, &resolved, hot, bound);
+        if edit { layout::drag_markers(ui, &painter, rect, device_key, &resolved); }
     }
 }
 
@@ -250,10 +257,17 @@ pub fn sidebar(
     readout.sort();
     readout.dedup();
 
+    let edit = layout::edit_enabled();
     ui.horizontal(|ui| {
         ui.strong("Devices");
         if ui.selectable_label(*show_labels, "🏷 Arrows").on_hover_text("Toggle numbered callouts on the images").clicked() {
             *show_labels = !*show_labels;
+        }
+        if ui.selectable_label(edit, "✥ Edit layout").on_hover_text("Drag callout dots to reposition them; saved per device").clicked() {
+            layout::set_edit(!edit);
+        }
+        if edit && ui.button("Reset layout").on_hover_text("Restore all callout dots to their built-in positions").clicked() {
+            layout::reset_all();
         }
     });
     ui.add_space(2.0);
@@ -276,13 +290,16 @@ pub fn sidebar(
     });
     ui.separator();
 
+    // Callouts are drawn whenever labels are on OR we're editing (you need to see the
+    // dots to drag them).
+    let markers_visible = *show_labels || edit;
     let oct = ab6_octant(devices);
     egui::ScrollArea::vertical().show(ui, |ui| {
         let iw = ui.available_width();
         ui.set_max_width(iw); // bound the inner ui so ui.columns splits correctly
         // Main flight stick: full-width and prominent (it carries the most controls).
         if want_stick {
-            image_block(ui, "MHG Flight Stick", &tex.stick, iw, MHG_MARKERS, MHG_HATS, &hot, oct, *show_labels, bound);
+            image_block(ui, "MHG Flight Stick", &tex.stick, iw, MHG_MARKERS, MHG_HATS, &hot, oct, markers_visible, bound, "stick", edit);
             ui.add_space(6.0);
         }
         // Secondary devices in a 2-up grid (scales as more get added: base, pedals,
@@ -291,10 +308,10 @@ pub fn sidebar(
             ui.columns(2, |cols| {
                 let cw = (iw - 12.0) / 2.0;
                 if want_base {
-                    image_block(&mut cols[0], "AB6 Base", &tex.base, cw, BASE_MARKERS, &[], &hot, None, *show_labels, bound);
+                    image_block(&mut cols[0], "AB6 Base", &tex.base, cw, BASE_MARKERS, &[], &hot, None, markers_visible, bound, "base", edit);
                 }
                 if want_pedals {
-                    image_block(&mut cols[1], "MRP Pedals", &tex.pedals, cw, PEDAL_MARKERS, &[], &hot, None, *show_labels, bound);
+                    image_block(&mut cols[1], "MRP Pedals", &tex.pedals, cw, PEDAL_MARKERS, &[], &hot, None, markers_visible, bound, "pedals", edit);
                 }
             });
         }
