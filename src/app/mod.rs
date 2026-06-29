@@ -8,8 +8,8 @@ mod detect;
 mod export_ui;
 mod panels;
 mod tabs;
+mod theme;
 mod toolbar;
-mod vjoy_style;
 mod vjoy_ui;
 mod widgets;
 
@@ -67,8 +67,7 @@ pub struct App {
     show_community: bool,               // "🌐 Community profiles" browser open?
     community: Arc<Mutex<crate::community::CommunityState>>, // async listing fetch result
     community_dl: Arc<Mutex<crate::community::DownloadState>>, // async profile download result
-    notif_log: Vec<String>, // history of status changes for the top-right notification feed (newest last)
-    notif_collapsed: bool, // when true the feed shows only a slim "● n" pill (history preserved)
+    notif_log: Vec<String>, // history of status changes for the inline toolbar notification chip (newest last)
     live_muted: HashSet<(u16, u16)>, // devices soft-muted from the LIVE display (glow + Detected); UI-only, no HidHide
 }
 
@@ -124,7 +123,6 @@ impl App {
             community: Arc::new(Mutex::new(crate::community::CommunityState::Idle)),
             community_dl: Arc::new(Mutex::new(crate::community::DownloadState::Idle)),
             notif_log: Vec::new(),
-            notif_collapsed: true, // start collapsed: show only the "● n" pill until clicked
             live_muted: HashSet::new(),
         };
         app.load_selected();
@@ -205,6 +203,7 @@ impl App {
 
 impl eframe::App for App {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        theme::apply(ctx);
         self.devices = input::poll();
         if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
             self.capture = None;
@@ -228,7 +227,7 @@ impl eframe::App for App {
             }
         }
 
-        let App { games, selected, tab, actions, rows, devices, capture, status, elevated, hidden, hide_state, textures, show_labels, update, show_export_dialog, export_opts, pending_export, export_shot_sent, last_panel_rect, profile, profile_input, vjoy_map, vjoy_sel, vjoy_capture, vjoy_btn_pick, vjoy_axis_pick, vjoy_pair_fwd, vjoy_pair_rev, vjoy_paused, show_community, community, community_dl, notif_log, notif_collapsed, live_muted } = self;
+        let App { games, selected, tab, actions, rows, devices, capture, status, elevated, hidden, hide_state, textures, show_labels, update, show_export_dialog, export_opts, pending_export, export_shot_sent, last_panel_rect, profile, profile_input, vjoy_map, vjoy_sel, vjoy_capture, vjoy_btn_pick, vjoy_axis_pick, vjoy_pair_fwd, vjoy_pair_rev, vjoy_paused, show_community, community, community_dl, notif_log, live_muted } = self;
 
         // Capture every status change into the notification feed history (newest last,
         // capped). The top-right feed below renders this so old notifications stay visible.
@@ -267,9 +266,9 @@ impl eframe::App for App {
                 ui.separator();
                 match &detected {
                     Some(s) => ui.label(egui::RichText::new(format!("Detected: {s}"))
-                        .strong().color(egui::Color32::from_rgb(70, 210, 110))),
+                        .strong().color(theme::ACCENT_DK)),
                     None => ui.label(egui::RichText::new("Detected: —")
-                        .color(egui::Color32::from_rgb(120, 128, 145))),
+                        .color(theme::TEXT_FAINT)),
                 };
             });
             ui.add_space(3.0);
@@ -281,6 +280,7 @@ impl eframe::App for App {
                 hide_state, textures, show_labels, update, show_export_dialog, export_opts,
                 pending_export, export_shot_sent, last_panel_rect, profile, profile_input,
                 show_community, community, community_dl, vjoy_map, &bound, &groups, live_muted,
+                notif_log,
             ),
             Tab::VjoySetup => {
                 tabs::vjoy_setup_tab(
@@ -291,9 +291,8 @@ impl eframe::App for App {
             }
         };
 
-        // Top-right notification feed (history) — drawn last so it floats over both
-        // tabs; offset down when the update banner is also occupying the top-right.
-        panels::notif_feed(ctx, notif_log, notif_collapsed, update.lock().unwrap().is_some());
+        // The notification history is now rendered inline in the Bind-tab toolbar
+        // (panels::notif_chip via toolbar::top_bar); nothing floats top-right anymore.
 
         if reload { self.load_selected(); }
         ctx.request_repaint_after(Duration::from_millis(30));

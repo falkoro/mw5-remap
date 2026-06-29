@@ -3,7 +3,7 @@
 //! CAPTURE-bind a single physical control to a chosen vJoy target. Mappings live in
 //! `vjoy_map.txt`; feeding is active whenever ≥1 mapping exists (unless paused).
 
-use super::vjoy_style::{pill_button, section, status_pill, ACCENT, BG, MUTED, TXT};
+use super::theme;
 use crate::input::Device;
 use crate::vjoy_map::{axis_name, Mapping, Source, Target, VjoyMap, VJOY_AXES};
 use eframe::egui;
@@ -67,7 +67,7 @@ pub(super) fn panel(
     paused: &mut bool,
     status: &mut String,
 ) {
-    let frame = egui::Frame::none().fill(BG).inner_margin(egui::Margin::symmetric(12.0, 9.0));
+    let frame = egui::Frame::none().fill(theme::BG).inner_margin(egui::Margin::symmetric(12.0, 9.0));
     egui::TopBottomPanel::top("vjoy_route").frame(frame).show(ctx, |ui| {
         let vjoy_ok = crate::vjoy::available();
         // keep the selected device valid (default to the first connected stick)
@@ -77,22 +77,22 @@ pub(super) fn panel(
 
         // Header: title + live status pill.
         ui.horizontal(|ui| {
-            ui.label(egui::RichText::new("🕹  Route to vJoy").heading().color(ACCENT));
+            ui.label(egui::RichText::new("🕹  Route to vJoy").heading().color(theme::ACCENT_DK));
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                status_pill(ui, *paused, map, vjoy_ok);
+                theme::status_pill(ui, *paused, map, vjoy_ok);
             });
         });
         ui.add_space(6.0);
 
         if !vjoy_ok {
             egui::Frame::none()
-                .fill(egui::Color32::from_rgb(58, 44, 28))
-                .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(200, 120, 60)))
+                .fill(theme::tint(theme::CAPTURING, 0.82))
+                .stroke(egui::Stroke::new(1.0, theme::CAPTURING))
                 .rounding(egui::Rounding::same(8.0))
                 .inner_margin(egui::Margin::symmetric(11.0, 9.0))
                 .show(ui, |ui| {
-                    ui.label(egui::RichText::new("⚠  vJoy not detected").strong().color(egui::Color32::from_rgb(235, 180, 120)));
-                    ui.label(egui::RichText::new("Install vJoy and configure device 1, then reopen this tab.").color(MUTED));
+                    ui.label(egui::RichText::new("⚠  vJoy not detected").strong().color(theme::CAP_DK));
+                    ui.label(egui::RichText::new("Install vJoy and configure device 1, then reopen this tab.").color(theme::TEXT_DIM));
                 });
             ui.add_space(4.0);
             return;
@@ -101,14 +101,14 @@ pub(super) fn panel(
         let cur = sel.and_then(|s| devices.iter().find(|d| (d.vid, d.pid) == s));
 
         // SOURCE STICK + auto-route.
-        section(ui, "SOURCE STICK", |ui| {
+        theme::section(ui, "SOURCE STICK", |ui| {
             ui.horizontal_wrapped(|ui| {
-                ui.label(egui::RichText::new("Stick").color(MUTED));
+                ui.label(egui::RichText::new("Stick").color(theme::TEXT_DIM));
                 let cur_name = cur.map(|d| d.name.clone()).unwrap_or_else(|| "(no stick)".into());
                 egui::ComboBox::from_id_salt("vjoy_stick").selected_text(cur_name).width(210.0).show_ui(ui, |ui| {
                     for d in devices { ui.selectable_value(sel, Some((d.vid, d.pid)), &d.name); }
                 });
-                if pill_button(ui, cur.is_some(), "⚡ Auto-route whole stick", true)
+                if theme::pill_button(ui, cur.is_some(), "⚡ Auto-route whole stick", true)
                     .on_hover_text("Map ALL of this stick's buttons and axes onto vJoy (sequential buttons, free X/Y/Z/Rx/Ry/Rz axes).")
                     .clicked()
                 {
@@ -124,45 +124,45 @@ pub(super) fn panel(
         ui.add_space(6.0);
 
         // BIND ONE CONTROL — pick a vJoy target, click Bind, then actuate the control.
-        section(ui, "BIND ONE CONTROL", |ui| {
+        theme::section(ui, "BIND ONE CONTROL", |ui| {
             let capturing = capture.is_some();
             ui.horizontal_wrapped(|ui| {
-                ui.label(egui::RichText::new("vJoy button").color(MUTED));
+                ui.label(egui::RichText::new("vJoy button").color(theme::TEXT_DIM));
                 ui.add_enabled(!capturing, egui::DragValue::new(btn_pick).range(1..=32));
-                if pill_button(ui, sel.is_some() && !capturing, "● Bind button", false).clicked() {
+                if theme::pill_button(ui, sel.is_some() && !capturing, "Bind button", false).clicked() {
                     start_capture(capture, sel, devices, Target::Button(*btn_pick), status);
                 }
                 ui.separator();
-                ui.label(egui::RichText::new("vJoy axis").color(MUTED));
+                ui.label(egui::RichText::new("vJoy axis").color(theme::TEXT_DIM));
                 egui::ComboBox::from_id_salt("vjoy_axis").selected_text(axis_name(*axis_pick)).show_ui(ui, |ui| {
                     for u in VJOY_AXES { ui.selectable_value(axis_pick, u, axis_name(u)); }
                 });
-                if pill_button(ui, sel.is_some() && !capturing, "● Bind axis", false).clicked() {
+                if theme::pill_button(ui, sel.is_some() && !capturing, "Bind axis", false).clicked() {
                     start_capture(capture, sel, devices, Target::Axis(*axis_pick), status);
                 }
             });
             if capturing {
                 ui.add_space(4.0);
                 ui.label(egui::RichText::new("⏺ press a control on the stick…  (Esc cancels)")
-                    .strong().color(egui::Color32::from_rgb(235, 180, 90)));
+                    .strong().color(theme::CAP_DK));
             }
         });
         ui.add_space(6.0);
 
         // COMBINE two physical axes into ONE bipolar vJoy axis (two toe pedals -> one
         // forward/reverse throttle: centre=stop, fwd axis up, rev axis down).
-        section(ui, "COMBINE TWO AXES → ONE", |ui| {
+        theme::section(ui, "COMBINE TWO AXES → ONE", |ui| {
             ui.horizontal_wrapped(|ui| {
-                ui.label(egui::RichText::new("Target").color(MUTED));
+                ui.label(egui::RichText::new("Target").color(theme::TEXT_DIM));
                 egui::ComboBox::from_id_salt("vjoy_pair_axis").selected_text(axis_name(*axis_pick)).show_ui(ui, |ui| {
                     for u in VJOY_AXES { ui.selectable_value(axis_pick, u, axis_name(u)); }
                 });
-                ui.label(egui::RichText::new("fwd").color(MUTED));
+                ui.label(egui::RichText::new("fwd").color(theme::TEXT_DIM));
                 axis_index_combo(ui, "vjoy_pair_fwd", pair_fwd, cur);
-                ui.label(egui::RichText::new("rev").color(MUTED));
+                ui.label(egui::RichText::new("rev").color(theme::TEXT_DIM));
                 axis_index_combo(ui, "vjoy_pair_rev", pair_rev, cur);
                 let ok = sel.is_some() && pair_fwd != pair_rev;
-                if pill_button(ui, ok, "➕ Add combine", false)
+                if theme::pill_button(ui, ok, "➕ Add combine", false)
                     .on_hover_text("Map the forward axis (up) + reverse axis (down) onto ONE centred bipolar vJoy axis.")
                     .clicked()
                 {
@@ -179,7 +179,7 @@ pub(super) fn panel(
         if !map.mappings.is_empty() {
             ui.add_space(6.0);
             let mut remove: Option<usize> = None;
-            section(ui, &format!("MAPPINGS  ({})", map.mappings.len()), |ui| {
+            theme::section(ui, &format!("MAPPINGS  ({})", map.mappings.len()), |ui| {
                 egui::ScrollArea::vertical().max_height(120.0).show(ui, |ui| {
                     for i in 0..map.mappings.len() {
                         ui.horizontal(|ui| {
@@ -188,10 +188,10 @@ pub(super) fn panel(
                             let mut inv = m.invert;
                             if ui.checkbox(&mut inv, "Inv").changed() { m.invert = inv; map_dirty(map, status); }
                             let m = &map.mappings[i];
-                            ui.label(egui::RichText::new(format!("{:04X}:{:04X}", m.vid, m.pid)).size(11.5).color(MUTED));
-                            ui.label(egui::RichText::new(m.source.label()).color(TXT));
-                            ui.label(egui::RichText::new("→").color(ACCENT));
-                            ui.label(egui::RichText::new(m.target.label()).strong().color(ACCENT));
+                            ui.label(egui::RichText::new(format!("{:04X}:{:04X}", m.vid, m.pid)).size(11.5).color(theme::TEXT_DIM));
+                            ui.label(egui::RichText::new(m.source.label()).color(theme::TEXT));
+                            ui.label(egui::RichText::new("→").color(theme::ACCENT_DK));
+                            ui.label(egui::RichText::new(m.target.label()).strong().color(theme::ACCENT_DK));
                         });
                     }
                 });

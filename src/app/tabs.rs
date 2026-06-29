@@ -4,7 +4,7 @@
 //! `mod.rs` so the egui shell stays within the per-module size budget. Each fn takes
 //! only the app state it touches (mirrors how `panels`/`toolbar` are wired).
 
-use super::vjoy_style::{ACCENT, BG, CARD, CARD2, MUTED, RIM, TXT};
+use super::theme;
 use super::widgets::{persist, Capture};
 use super::vjoy_ui::VjoyCapture;
 use super::{community_ui, export_ui, panels, toolbar, vjoy_ui, ExportOpts};
@@ -56,9 +56,10 @@ pub(super) fn bind_tab(
     bound: &HashMap<String, String>,
     groups: &[(String, Vec<usize>)],
     live_muted: &mut std::collections::HashSet<(u16, u16)>,
+    notif_log: &mut Vec<String>,
 ) -> bool {
     panels::update_banner(ctx, status, update);
-    let reload = toolbar::top_bar(ctx, games, selected, rows, actions, status, elevated, hidden, hide_state, show_export_dialog, profile, profile_input, show_community, community);
+    let reload = toolbar::top_bar(ctx, games, selected, rows, actions, status, elevated, hidden, hide_state, show_export_dialog, profile, profile_input, show_community, community, notif_log);
     if *show_community {
         community_ui::dialog(ctx, show_community, community, community_dl, &games[*selected].name().to_string(), status);
     }
@@ -127,33 +128,33 @@ pub(super) fn vjoy_setup_tab(
     hide_state: &PathBuf,
 ) {
     vjoy_ui::panel(ctx, devices, vjoy_map, vjoy_capture, vjoy_sel, vjoy_btn_pick, vjoy_axis_pick, vjoy_pair_fwd, vjoy_pair_rev, vjoy_paused, status);
-    let frame = egui::Frame::central_panel(&ctx.style()).fill(BG).inner_margin(egui::Margin::symmetric(14.0, 10.0));
+    let frame = egui::Frame::central_panel(&ctx.style()).fill(theme::BG).inner_margin(egui::Margin::symmetric(14.0, 10.0));
     egui::CentralPanel::default().frame(frame).show(ctx, |ui| {
-        ui.label(egui::RichText::new("How it works").strong().size(12.0).color(ACCENT));
+        ui.label(egui::RichText::new("How it works").strong().size(12.0).color(theme::ACCENT_DK));
         ui.label(egui::RichText::new(
             "Route any connected stick onto the virtual vJoy device above, then bind vJoy's buttons/axes over in the 🎮 Bind tab — it shows up as a normal joystick.",
-        ).color(MUTED));
+        ).color(theme::TEXT_DIM));
         ui.add_space(10.0);
 
         egui::Frame::none()
-            .fill(CARD)
-            .stroke(egui::Stroke::new(1.0, RIM))
+            .fill(theme::CARD)
+            .stroke(egui::Stroke::new(1.0, theme::RIM))
             .rounding(egui::Rounding::same(8.0))
             .inner_margin(egui::Margin::symmetric(12.0, 10.0))
             .show(ui, |ui| {
-                ui.label(egui::RichText::new("CONNECTED STICKS").strong().size(11.5).color(ACCENT));
+                ui.label(egui::RichText::new("CONNECTED STICKS").strong().size(11.5).color(theme::ACCENT_DK));
                 ui.add_space(4.0);
                 ui.label(egui::RichText::new(
                     "Hide a physical stick from games so MW5 sees only vJoy. This app stays whitelisted in HidHide, so it keeps reading the hidden stick to feed vJoy.",
-                ).size(11.5).color(MUTED));
+                ).size(11.5).color(theme::TEXT_DIM));
                 if !elevated {
                     ui.add_space(2.0);
                     ui.label(egui::RichText::new("⚠ Run as admin to hide devices (use the “Run as admin” button in the Bind tab).")
-                        .size(11.5).color(egui::Color32::from_rgb(225, 170, 90)));
+                        .size(11.5).color(theme::CAP_DK));
                 }
                 ui.add_space(6.0);
                 if devices.is_empty() {
-                    ui.label(egui::RichText::new("No controllers detected.").color(MUTED));
+                    ui.label(egui::RichText::new("No controllers detected.").color(theme::TEXT_DIM));
                 } else {
                     for d in devices {
                         stick_row(ui, d, elevated, hidden, hide_state, status);
@@ -182,22 +183,22 @@ fn stick_row(
     let tag = format!("VID_{:04X}", d.vid);
     let is_hidden = !is_vjoy && hidden.iter().any(|p| p.to_uppercase().contains(&tag));
     egui::Frame::none()
-        .fill(CARD2)
-        .stroke(egui::Stroke::new(1.0, if is_hidden { ACCENT } else { RIM }))
+        .fill(theme::CARD_ALT)
+        .stroke(egui::Stroke::new(1.0, if is_hidden { theme::ACCENT } else { theme::RIM }))
         .rounding(egui::Rounding::same(7.0))
         .inner_margin(egui::Margin::symmetric(10.0, 6.0))
         .show(ui, |ui| {
     ui.horizontal(|ui| {
-        let dot = if is_vjoy { ACCENT } else if is_hidden { egui::Color32::from_rgb(120, 128, 145) } else { egui::Color32::from_rgb(86, 156, 235) };
-        ui.label(egui::RichText::new("●").size(10.0).color(dot));
-        ui.label(egui::RichText::new(&d.name).strong().color(TXT));
-        ui.label(egui::RichText::new(format!("{:04X}:{:04X}", d.vid, d.pid)).size(11.0).color(MUTED));
+        let dot = if is_vjoy { theme::ACCENT } else if is_hidden { theme::TEXT_FAINT } else { theme::STICK };
+        theme::dot(ui, dot, 10.0);
+        ui.label(egui::RichText::new(&d.name).strong().color(theme::TEXT));
+        ui.label(egui::RichText::new(format!("{:04X}:{:04X}", d.vid, d.pid)).size(11.0).color(theme::TEXT_DIM));
         if is_vjoy {
-            ui.label(egui::RichText::new("← vJoy (MW5 must see this)").size(11.5).color(ACCENT));
+            ui.label(egui::RichText::new("← vJoy (MW5 must see this)").size(11.5).color(theme::ACCENT_DK));
             return;
         }
         if is_hidden {
-            ui.label(egui::RichText::new("hidden from MW5").size(11.0).color(ACCENT));
+            ui.label(egui::RichText::new("hidden from MW5").size(11.0).color(theme::ACCENT_DK));
         }
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
         if !elevated {

@@ -2,7 +2,8 @@
 //! bindings panel (header + legend + balanced grid columns), and the floating footers.
 //! Split out of `update()` to keep each file under the size budget.
 
-use super::widgets::{binding_row, mute_chips, Capture, TEXT_MAIN};
+use super::theme;
+use super::widgets::{binding_row, mute_chips, Capture};
 use std::collections::HashSet;
 use crate::games::{Action, Binding, GameProvider};
 use crate::input;
@@ -11,36 +12,31 @@ use std::sync::{Arc, Mutex};
 
 type UpdateCell = Arc<Mutex<Option<(String, String)>>>;
 
-/// A floating "Update available" toast pinned TOP-RIGHT (dark card + green LIVE accent).
+/// A floating "Update available" toast pinned TOP-RIGHT (light card + green accent).
 /// Shown only when the background check found a newer release.
 pub(super) fn update_banner(ctx: &egui::Context, status: &mut String, update: &UpdateCell) {
     let (ver, url) = match update.lock().unwrap().clone() { Some(p) => p, None => return };
-    let accent = super::widgets::LIVE;
     egui::Area::new(egui::Id::new("update_toast"))
         .order(egui::Order::Foreground)
         .anchor(egui::Align2::RIGHT_TOP, egui::vec2(-12.0, 12.0))
         .show(ctx, |ui| {
             egui::Frame::popup(ui.style())
-                .fill(egui::Color32::from_rgb(30, 34, 46))
-                .stroke(egui::Stroke::new(1.0, accent))
+                .fill(theme::CARD)
+                .stroke(egui::Stroke::new(1.0, theme::RIM))
                 .rounding(egui::Rounding::same(10.0))
                 .inner_margin(egui::Margin::symmetric(12.0, 10.0))
                 .show(ui, |ui| {
                     ui.set_max_width(250.0);
-                    ui.label(egui::RichText::new("⬆  Update available").strong().color(accent));
+                    ui.label(egui::RichText::new("⬆  Update available").strong().color(theme::ACCENT_DK));
                     ui.label(egui::RichText::new(format!("v{ver}  ·  you have v{}", crate::update::current_version()))
-                        .size(12.0).color(egui::Color32::from_rgb(150, 165, 190)));
+                        .size(12.0).color(theme::TEXT_DIM));
                     ui.add_space(7.0);
                     ui.horizontal(|ui| {
-                        let now = egui::Button::new(egui::RichText::new("Update now").strong().color(egui::Color32::from_rgb(12, 18, 14)))
-                            .fill(accent).rounding(egui::Rounding::same(6.0));
-                        if ui.add(now).clicked() {
+                        if theme::pill_button(ui, true, "Update now", true).clicked() {
                             *status = format!("Downloading v{ver}… the app will relaunch.");
                             if let Err(e) = crate::update::apply(&url) { *status = format!("Update failed: {e}"); }
                         }
-                        if ui.add(egui::Button::new(egui::RichText::new("Later").color(egui::Color32::from_rgb(190, 200, 215)))
-                            .fill(egui::Color32::from_rgb(48, 54, 70)).rounding(egui::Rounding::same(6.0))).clicked()
-                        {
+                        if theme::pill_button(ui, true, "Later", false).clicked() {
                             *update.lock().unwrap() = None;
                         }
                     });
@@ -60,99 +56,83 @@ pub(super) fn footers(ctx: &egui::Context) {
             let hash = env!("GIT_HASH");
             let tag = if hash.is_empty() { format!("v{}", crate::update::current_version()) }
                       else { format!("v{} · {branch}@{hash}", crate::update::current_version()) };
-            ui.label(egui::RichText::new(tag).monospace().size(9.5).color(egui::Color32::from_rgb(120, 130, 150)));
+            ui.label(egui::RichText::new(tag).monospace().size(9.5).color(theme::TEXT_FAINT));
         });
 }
 
-/// The TOP-RIGHT notification feed (newest at top). Collapsed = a slim pill (green dot +
-/// count, "● 3"); expanded = clean dark cards, newest with a bright green accent dot +
-/// brighter text, older ones dimmer, each with a `✕` plus a `Clear`/`Collapse` footer.
-/// `shifted` drops it below the update banner. Floats over both tabs.
-pub(super) fn notif_feed(ctx: &egui::Context, log: &mut Vec<String>, collapsed: &mut bool, shifted: bool) {
-    if log.is_empty() { return; }
-    let accent = super::widgets::LIVE;
-    let card = egui::Color32::from_rgb(30, 34, 46); // same dark fill as the update toast / popups
-    let card_dim = egui::Color32::from_rgb(24, 27, 37);
-    let rim = egui::Color32::from_rgb(52, 58, 74);
-    let top = if shifted { 102.0 } else { 12.0 };
+/// INLINE toolbar notification indicator: a compact chip — green dot + history count
+/// ("● 3") — that lives at the right end of the top toolbar (next to "Run as admin"),
+/// NOT a floating top-right overlay. Clicking it toggles a dropdown (drawn in the
+/// foreground, so it never sits behind a panel) listing recent notifications newest-
+/// first, each with a `✕` to dismiss, plus a `Clear`. History stays in `log`.
+pub(super) fn notif_chip(ui: &mut egui::Ui, log: &mut Vec<String>) {
+    let n = log.len();
+    let dot = if n > 0 { theme::ACCENT } else { theme::TEXT_FAINT };
 
-    // Collapsed: a slim rounded pill — green status dot + history count.
-    if *collapsed {
-        egui::Area::new(egui::Id::new("notif_feed"))
-            .order(egui::Order::Foreground)
-            .anchor(egui::Align2::RIGHT_TOP, egui::vec2(-12.0, top))
-            .show(ctx, |ui| {
-                let resp = egui::Frame::none()
-                    .fill(card)
-                    .stroke(egui::Stroke::new(1.0, rim))
-                    .rounding(egui::Rounding::same(13.0)) // high rounding => pill
-                    .inner_margin(egui::Margin::symmetric(11.0, 5.0))
-                    .show(ui, |ui| {
-                        ui.horizontal(|ui| {
-                            ui.label(egui::RichText::new("●").size(10.0).color(accent));
-                            ui.add_space(1.0);
-                            ui.label(egui::RichText::new(log.len().to_string()).size(12.5).strong()
-                                .color(egui::Color32::from_rgb(210, 218, 228)));
-                        });
-                    })
-                    .response
-                    .interact(egui::Sense::click())
-                    .on_hover_text("Show notifications");
-                if resp.clicked() { *collapsed = false; }
+    // The chip: a slim white rounded pill made clickable by re-sensing the frame's rect.
+    let resp = egui::Frame::none()
+        .fill(theme::CARD)
+        .stroke(egui::Stroke::new(1.0, theme::RIM))
+        .rounding(egui::Rounding::same(11.0))
+        .inner_margin(egui::Margin::symmetric(9.0, 3.0))
+        .show(ui, |ui| {
+            ui.horizontal(|ui| {
+                theme::dot(ui, dot, 9.0);
+                ui.add_space(2.0);
+                ui.label(egui::RichText::new(n.to_string()).size(12.5).strong()
+                    .color(theme::TEXT));
             });
-        return;
-    }
+        })
+        .response
+        .interact(egui::Sense::click())
+        .on_hover_text("Notifications");
+
+    let popup_id = ui.make_persistent_id("notif_popup");
+    if resp.clicked() { ui.memory_mut(|m| m.toggle_popup(popup_id)); }
 
     let mut dismiss: Option<usize> = None;
     let mut clear_all = false;
-    egui::Area::new(egui::Id::new("notif_feed"))
-        .order(egui::Order::Foreground)
-        .anchor(egui::Align2::RIGHT_TOP, egui::vec2(-12.0, top))
-        .show(ctx, |ui| {
-            ui.set_max_width(314.0);
-            // newest first: iterate the tail in reverse, brightest card on top.
-            for (depth, msg) in log.iter().rev().take(6).enumerate() {
-                let newest = depth == 0;
-                let fade = 1.0 - (depth as f32 * 0.13);
-                let txt_col = if newest {
-                    egui::Color32::from_rgb(230, 236, 244)
-                } else {
-                    let g = (175.0 * fade).clamp(120.0, 205.0) as u8;
-                    egui::Color32::from_rgb(g, g.saturating_add(8), g.saturating_add(20))
-                };
-                let dot = if newest { accent } else { egui::Color32::from_rgb(92, 100, 118) };
-                let stroke = if newest { egui::Stroke::new(1.5, accent) } else { egui::Stroke::new(1.0, rim) };
-                let size = if newest { 13.0 } else { 12.0 };
-                egui::Frame::none()
-                    .fill(if newest { card } else { card_dim })
-                    .stroke(stroke)
-                    .rounding(egui::Rounding::same(9.0))
-                    .inner_margin(egui::Margin::symmetric(11.0, 7.0))
-                    .show(ui, |ui| {
-                        ui.set_max_width(300.0);
-                        ui.horizontal(|ui| {
-                            ui.label(egui::RichText::new("●").size(if newest { 9.0 } else { 7.0 }).color(dot));
-                            ui.add_space(3.0);
-                            let rt = egui::RichText::new(msg.as_str()).size(size).color(txt_col);
-                            ui.label(if newest { rt.strong() } else { rt });
-                            // subtle dismiss pinned to the right.
-                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                if ui.small_button("✕").on_hover_text("Dismiss this notification").clicked() {
-                                    dismiss = Some(log.len() - 1 - depth);
-                                }
-                            });
-                        });
-                    });
-                ui.add_space(5.0);
+    egui::popup::popup_below_widget(
+        ui,
+        popup_id,
+        &resp,
+        egui::popup::PopupCloseBehavior::CloseOnClickOutside,
+        |ui| {
+            ui.set_max_width(300.0);
+            ui.set_min_width(240.0);
+            if log.is_empty() {
+                ui.label(egui::RichText::new("No notifications yet.")
+                    .size(12.0).color(theme::TEXT_DIM));
+                return;
             }
-            // Footer controls: clear the history or collapse the feed back to the pill.
+            // newest first: iterate the tail in reverse, brightest row on top.
+            for (depth, msg) in log.iter().rev().take(8).enumerate() {
+                let newest = depth == 0;
+                let txt_col = if newest { theme::TEXT } else { theme::TEXT_DIM };
+                ui.horizontal(|ui| {
+                    theme::dot(ui, if newest { theme::ACCENT } else { theme::TEXT_FAINT }, if newest { 8.0 } else { 7.0 });
+                    ui.add_space(3.0);
+                    let rt = egui::RichText::new(msg.as_str()).size(12.0).color(txt_col);
+                    ui.label(if newest { rt.strong() } else { rt });
+                    // dismiss pinned to the right edge of the row.
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if ui.small_button("✕").on_hover_text("Dismiss this notification").clicked() {
+                            dismiss = Some(log.len() - 1 - depth);
+                        }
+                    });
+                });
+                ui.add_space(2.0);
+            }
+            ui.separator();
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if ui.small_button("Collapse").on_hover_text("Hide the feed").clicked() { *collapsed = true; }
-                ui.add_space(4.0);
-                if ui.small_button("Clear").on_hover_text("Dismiss all notifications").clicked() { clear_all = true; }
+                if ui.small_button("Clear").on_hover_text("Dismiss all notifications").clicked() {
+                    clear_all = true;
+                }
             });
-        });
-    if clear_all { log.clear(); *collapsed = true; }
+        },
+    );
+
+    if clear_all { log.clear(); }
     else if let Some(i) = dismiss { if i < log.len() { log.remove(i); } }
 }
 
@@ -191,7 +171,7 @@ pub(super) fn central(
             ui.heading("Cockpit Bindings");
             ui.label(egui::RichText::new(
                 "— click a chip, then press the control / move the axis (Esc cancels). A chip turns green when you use it.",
-            ).color(egui::Color32::from_rgb(95, 100, 115)));
+            ).color(theme::TEXT_DIM));
         });
         legend(ui); // which colour = which physical device
         mute_chips(ui, devices, live_muted); // per-stick LIVE mute (display-only)
@@ -239,12 +219,12 @@ pub(super) fn legend(ui: &mut egui::Ui) {
     ui.horizontal(|ui| {
         let chip = |ui: &mut egui::Ui, col: egui::Color32, txt: &str| {
             egui::Frame::none().fill(col).inner_margin(egui::Margin::symmetric(7.0, 2.0)).rounding(4.0).show(ui, |ui| {
-                ui.label(egui::RichText::new(txt).color(egui::Color32::BLACK).strong());
+                ui.label(egui::RichText::new(txt).color(theme::ON_ACCENT).strong());
             });
         };
-        ui.label(egui::RichText::new("Devices:").color(TEXT_MAIN));
-        chip(ui, super::widgets::STICK_COL, "Stick / Joystick");
-        chip(ui, super::widgets::THROTTLE_COL, "Throttle / Pedals");
-        chip(ui, super::widgets::LIVE, "lit = in use");
+        ui.label(egui::RichText::new("Devices:").color(theme::TEXT));
+        chip(ui, theme::STICK, "Stick / Joystick");
+        chip(ui, theme::THROTTLE, "Throttle / Pedals");
+        chip(ui, theme::ACCENT, "lit = in use");
     });
 }

@@ -30,11 +30,14 @@ pub(super) fn top_bar(
     profile_input: &mut String,
     show_community: &mut bool,
     community: &Arc<Mutex<CommunityState>>,
+    notif_log: &mut Vec<String>,
 ) -> bool {
     let mut reload = false;
     egui::TopBottomPanel::top("top").show(ctx, |ui| {
         ui.add_space(4.0);
-        ui.horizontal(|ui| {
+        // horizontal_wrapped: on a narrow window the buttons flow onto a second row
+        // instead of clipping, so every control stays reachable.
+        ui.horizontal_wrapped(|ui| {
             ui.label("Game:");
             let mut want = *selected;
             egui::ComboBox::from_id_salt("game")
@@ -178,6 +181,10 @@ pub(super) fn top_bar(
                     if sys::relaunch_elevated() { std::process::exit(0); }
                 }
             }
+            // Inline notification indicator — sits at the right end of the toolbar,
+            // next to the elevation control. Replaces the old floating top-right feed.
+            ui.separator();
+            super::panels::notif_chip(ui, notif_log);
         });
         ui.add_space(4.0);
     });

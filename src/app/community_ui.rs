@@ -2,6 +2,7 @@
 //! GitHub repo (loaded off-thread into `CommunityState`) and lets the user download
 //! one into their local profiles folder. Mirrors the `export_ui` dialog style.
 
+use super::theme;
 use crate::community::{self, CommunityState, DownloadState};
 use eframe::egui;
 use std::sync::{Arc, Mutex};
@@ -38,7 +39,7 @@ pub fn dialog(
                     ui.horizontal(|ui| { ui.spinner(); ui.label("Loading…"); });
                 }
                 CommunityState::Failed(e) => {
-                    ui.colored_label(egui::Color32::from_rgb(230, 120, 120), e);
+                    ui.colored_label(theme::DANGER, e);
                 }
                 CommunityState::Loaded(list) if list.is_empty() => {
                     ui.label("No community profiles yet — be the first to share!");
