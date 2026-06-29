@@ -9,17 +9,34 @@
 
 use super::{Mw5, Role};
 use crate::games::GameProvider; // brings Mw5::config_path (a trait method) into scope
+use std::sync::atomic::{AtomicBool, Ordering};
 
-/// Set/clear the read-only flag on a file.
-pub(super) fn set_readonly(path: &std::path::Path, ro: bool) -> Result<(), String> {
+/// GUI config-lock flag (default ON). When on, `mw5::save()` re-applies the read-only
+/// flag to GameUserSettings.ini AFTER writing, because a read-only file is exactly what
+/// PREVENTS MW5 from resetting the joystick bindings back to stock on its next launch.
+/// Mirrors `vjoy::set_active`/`is_active`.
+static CONFIG_LOCKED: AtomicBool = AtomicBool::new(true);
+
+/// Toggle the GUI config-lock flag (🔒 Lock config). Pure in-process state; the live
+/// file's read-only bit is (re)applied by `save()` when locked, and cleared by the
+/// caller (toolbar) the moment the lock is turned OFF so MW5's own menu can edit it.
+pub fn set_config_locked(lock: bool) { CONFIG_LOCKED.store(lock, Ordering::Relaxed); }
+
+/// Is the config-lock on? Default `true`.
+pub fn is_config_locked() -> bool { CONFIG_LOCKED.load(Ordering::Relaxed) }
+
+/// Set/clear the read-only flag on a file. Read-only does NOT make MW5 ignore the file —
+/// it stops MW5 from rewriting the joystick bindings to stock on launch.
+pub fn set_readonly(path: &std::path::Path, ro: bool) -> Result<(), String> {
     let mut perm = std::fs::metadata(path).map_err(|e| e.to_string())?.permissions();
     perm.set_readonly(ro);
     std::fs::set_permissions(path, perm).map_err(|e| e.to_string())
 }
 
-/// Lock/unlock GameUserSettings (kept for the `--lock`/`--unlock` CLI / recovery only;
-/// the GUI lock feature was removed because a read-only config can make MW5 ignore it).
-pub fn set_config_locked(lock: bool) -> Result<(), String> {
+/// Lock/unlock the live GameUserSettings file directly and sync the flag — the
+/// `--lock`/`--unlock` CLI + recovery path.
+pub fn set_config_readonly(lock: bool) -> Result<(), String> {
+    set_config_locked(lock);
     set_readonly(&Mw5::new().config_path(), lock)
 }
 

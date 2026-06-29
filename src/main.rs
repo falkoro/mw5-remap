@@ -73,7 +73,7 @@ fn main() -> eframe::Result<()> {
     }
     if std::env::args().any(|a| a == "--lock" || a == "--unlock") {
         let lock = std::env::args().any(|a| a == "--lock");
-        match games::mw5::set_config_locked(lock) {
+        match games::mw5::set_config_readonly(lock) {
             Ok(()) => println!("GameUserSettings.ini is now {}.", if lock { "LOCKED (read-only) — MW5 can't reset your bindings" } else { "unlocked" }),
             Err(e) => println!("FAILED: {e}"),
         }

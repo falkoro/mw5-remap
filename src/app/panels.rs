@@ -1,8 +1,6 @@
-//! Chrome around the binding grid: the update banner, the central bindings panel
-//! (header + legend + the balanced grid columns), and the floating footers. The
-//! toolbar lives in its own `toolbar` module. Split out of `update()` purely to
-//! keep each file under the size budget — every helper takes only the app state
-//! it touches.
+//! Chrome around the binding grid: the update banner, notification feed, the central
+//! bindings panel (header + legend + balanced grid columns), and the floating footers.
+//! Split out of `update()` to keep each file under the size budget.
 
 use super::widgets::{binding_row, mute_chips, Capture, TEXT_MAIN};
 use std::collections::HashSet;
@@ -13,8 +11,7 @@ use std::sync::{Arc, Mutex};
 
 type UpdateCell = Arc<Mutex<Option<(String, String)>>>;
 
-/// A floating "Update available" toast pinned to the TOP-RIGHT, styled to match the
-/// app chrome (dark card + the green LIVE accent) — the template for future toasts.
+/// A floating "Update available" toast pinned TOP-RIGHT (dark card + green LIVE accent).
 /// Shown only when the background check found a newer release.
 pub(super) fn update_banner(ctx: &egui::Context, status: &mut String, update: &UpdateCell) {
     let (ver, url) = match update.lock().unwrap().clone() { Some(p) => p, None => return };
@@ -51,10 +48,8 @@ pub(super) fn update_banner(ctx: &egui::Context, status: &mut String, update: &U
         });
 }
 
-/// Footer overlay. A real TopBottomPanel::bottom gets overpainted by the central
-/// columns here, so we float this on top of everything instead: a tiny, unobtrusive
-/// version stamp at the bottom-right (no box, no button — updates surface only via the
-/// banner when one is actually available). Status now lives in the top-right feed.
+/// Footer overlay: a tiny version stamp floated bottom-right (a real bottom panel gets
+/// overpainted by the central columns). Status now lives in the top-right feed.
 pub(super) fn footers(ctx: &egui::Context) {
     egui::Area::new(egui::Id::new("footer_build"))
         .order(egui::Order::Foreground)
@@ -69,84 +64,100 @@ pub(super) fn footers(ctx: &egui::Context) {
         });
 }
 
-/// The TOP-RIGHT notification feed: a vertical stack of recent status messages with
-/// history, NEWEST AT TOP. The newest is a bright dark-card with the green LIVE accent;
-/// older entries fade (dimmer text) and shrink slightly. Shows the last ~6 entries.
-/// Each card carries a `✕` that REMOVES that entry from `log`; the newest also carries a
-/// `–` that collapses the whole feed to a small `🔔 {n}` badge (history is preserved —
-/// clicking the badge expands again). When the update banner occupies the top-right
-/// (`shifted`), the feed starts lower so the two don't collide. Floats over both tabs.
+/// The TOP-RIGHT notification feed (newest at top). Collapsed = a slim pill (green dot +
+/// count, "● 3"); expanded = clean dark cards, newest with a bright green accent dot +
+/// brighter text, older ones dimmer, each with a `✕` plus a `Clear`/`Collapse` footer.
+/// `shifted` drops it below the update banner. Floats over both tabs.
 pub(super) fn notif_feed(ctx: &egui::Context, log: &mut Vec<String>, collapsed: &mut bool, shifted: bool) {
     if log.is_empty() { return; }
     let accent = super::widgets::LIVE;
     let card = egui::Color32::from_rgb(30, 34, 46); // same dark fill as the update toast / popups
+    let card_dim = egui::Color32::from_rgb(24, 27, 37);
+    let rim = egui::Color32::from_rgb(52, 58, 74);
     let top = if shifted { 102.0 } else { 12.0 };
 
-    // Collapsed: a clean rounded PILL with the bell + history count (not a bare emoji).
+    // Collapsed: a slim rounded pill — green status dot + history count.
     if *collapsed {
         egui::Area::new(egui::Id::new("notif_feed"))
             .order(egui::Order::Foreground)
             .anchor(egui::Align2::RIGHT_TOP, egui::vec2(-12.0, top))
             .show(ctx, |ui| {
-                let badge = egui::Button::new(egui::RichText::new(format!("🔔 {}", log.len())).strong().size(13.0).color(accent))
+                let resp = egui::Frame::none()
                     .fill(card)
-                    .stroke(egui::Stroke::new(1.0, accent))
-                    .rounding(egui::Rounding::same(14.0)) // high rounding => pill
-                    .min_size(egui::vec2(46.0, 26.0));
-                if ui.add(badge).on_hover_text("Show notifications").clicked() { *collapsed = false; }
+                    .stroke(egui::Stroke::new(1.0, rim))
+                    .rounding(egui::Rounding::same(13.0)) // high rounding => pill
+                    .inner_margin(egui::Margin::symmetric(11.0, 5.0))
+                    .show(ui, |ui| {
+                        ui.horizontal(|ui| {
+                            ui.label(egui::RichText::new("●").size(10.0).color(accent));
+                            ui.add_space(1.0);
+                            ui.label(egui::RichText::new(log.len().to_string()).size(12.5).strong()
+                                .color(egui::Color32::from_rgb(210, 218, 228)));
+                        });
+                    })
+                    .response
+                    .interact(egui::Sense::click())
+                    .on_hover_text("Show notifications");
+                if resp.clicked() { *collapsed = false; }
             });
         return;
     }
 
     let mut dismiss: Option<usize> = None;
+    let mut clear_all = false;
     egui::Area::new(egui::Id::new("notif_feed"))
         .order(egui::Order::Foreground)
         .anchor(egui::Align2::RIGHT_TOP, egui::vec2(-12.0, top))
         .show(ctx, |ui| {
-            // newest first: iterate the tail in reverse, brightest card at the top.
+            ui.set_max_width(314.0);
+            // newest first: iterate the tail in reverse, brightest card on top.
             for (depth, msg) in log.iter().rev().take(6).enumerate() {
                 let newest = depth == 0;
                 let fade = 1.0 - (depth as f32 * 0.13);
                 let txt_col = if newest {
-                    egui::Color32::from_rgb(228, 234, 242)
+                    egui::Color32::from_rgb(230, 236, 244)
                 } else {
-                    let g = (170.0 * fade).clamp(120.0, 200.0) as u8;
+                    let g = (175.0 * fade).clamp(120.0, 205.0) as u8;
                     egui::Color32::from_rgb(g, g.saturating_add(8), g.saturating_add(20))
                 };
-                // The newest card carries the green LIVE accent stroke; older ones a quiet rim.
-                let stroke = if newest { egui::Stroke::new(1.5, accent) }
-                             else { egui::Stroke::new(1.0, egui::Color32::from_rgb(56, 62, 78)) };
-                let size = if newest { 13.5 } else { 12.5 }; // consistent with the rest of the UI
-                egui::Frame::popup(ui.style())
-                    .fill(if newest { card } else { egui::Color32::from_rgb(25, 28, 38) })
+                let dot = if newest { accent } else { egui::Color32::from_rgb(92, 100, 118) };
+                let stroke = if newest { egui::Stroke::new(1.5, accent) } else { egui::Stroke::new(1.0, rim) };
+                let size = if newest { 13.0 } else { 12.0 };
+                egui::Frame::none()
+                    .fill(if newest { card } else { card_dim })
                     .stroke(stroke)
-                    .rounding(egui::Rounding::same(10.0)) // same family as the update toast
-                    .inner_margin(egui::Margin::symmetric(12.0, 8.0))
+                    .rounding(egui::Rounding::same(9.0))
+                    .inner_margin(egui::Margin::symmetric(11.0, 7.0))
                     .show(ui, |ui| {
                         ui.set_max_width(300.0);
                         ui.horizontal(|ui| {
+                            ui.label(egui::RichText::new("●").size(if newest { 9.0 } else { 7.0 }).color(dot));
+                            ui.add_space(3.0);
                             let rt = egui::RichText::new(msg.as_str()).size(size).color(txt_col);
                             ui.label(if newest { rt.strong() } else { rt });
-                            // dismiss (and, on the newest card, collapse) pinned to the right.
+                            // subtle dismiss pinned to the right.
                             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                                 if ui.small_button("✕").on_hover_text("Dismiss this notification").clicked() {
                                     dismiss = Some(log.len() - 1 - depth);
-                                }
-                                if newest && ui.small_button("–").on_hover_text("Collapse the feed").clicked() {
-                                    *collapsed = true;
                                 }
                             });
                         });
                     });
                 ui.add_space(5.0);
             }
+            // Footer controls: clear the history or collapse the feed back to the pill.
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if ui.small_button("Collapse").on_hover_text("Hide the feed").clicked() { *collapsed = true; }
+                ui.add_space(4.0);
+                if ui.small_button("Clear").on_hover_text("Dismiss all notifications").clicked() { clear_all = true; }
+            });
         });
-    if let Some(i) = dismiss { if i < log.len() { log.remove(i); } }
+    if clear_all { log.clear(); *collapsed = true; }
+    else if let Some(i) = dismiss { if i < log.len() { log.remove(i); } }
 }
 
-/// The central "Cockpit Bindings" panel: header + legend, then the categories
-/// laid out across balanced columns with one `binding_row` each. `groups` is the
-/// category -> action-index grouping computed once per frame in `mod.rs`.
+/// The central "Cockpit Bindings" panel: header + legend, then the categories laid out
+/// across balanced columns with one `binding_row` each (`groups` from `mod.rs`).
 #[allow(clippy::too_many_arguments)]
 pub(super) fn central(
     ctx: &egui::Context,
@@ -182,15 +193,11 @@ pub(super) fn central(
                 "— click a chip, then press the control / move the axis (Esc cancels). A chip turns green when you use it.",
             ).color(egui::Color32::from_rgb(95, 100, 115)));
         });
-        // Device colour legend (which colour = which physical device).
-        legend(ui);
-        // Per-stick LIVE mute toggles (display-only): test one stick without the rest glowing.
-        mute_chips(ui, devices, live_muted);
+        legend(ui); // which colour = which physical device
+        mute_chips(ui, devices, live_muted); // per-stick LIVE mute (display-only)
         ui.separator();
-
-        // Spread the categories across N balanced columns (by row count) so the
-        // whole control map fits with far less scrolling. One column row needs
-        // ~470px; pick the column count that fits the current central width.
+        // Spread the categories across N balanced columns (by row count) so the whole
+        // control map fits with less scrolling; ~500px per column to suit the width.
         let avail_w = ui.available_width();
         let avail_h = ui.available_height(); // bound each column's scroll so it can't paint over the footer
         let ncols = ((avail_w / 500.0).floor() as usize).clamp(1, 3);
@@ -203,13 +210,10 @@ pub(super) fn central(
             heights[c] += g.1.len() + 2; // +heading overhead
         }
 
-        // Columns at the bounded central-panel level (so each gets an equal,
-        // on-screen half), each with its own vertical scroll. Wrapping ui.columns
-        // *inside* one ScrollArea breaks: the scroll area's inner ui is
-        // horizontally unbounded, so the split lands the 2nd column off-screen.
-        // ONE outer vertical ScrollArea (directly in the central panel, so its
-        // height is bounded — it clips/scrolls and never paints over the footer),
-        // with set_max_width so ui.columns splits the real width into equal halves.
+        // ONE outer vertical ScrollArea (bounded by the central panel, so it clips and
+        // never paints over the footer) with set_max_width, so ui.columns splits the real
+        // width into equal halves — wrapping ui.columns inside a ScrollArea would leave the
+        // inner ui horizontally unbounded and land the 2nd column off-screen.
         let _ = (avail_h, col_w);
         egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
             ui.set_max_width(avail_w);
@@ -230,8 +234,7 @@ pub(super) fn central(
     });
 }
 
-/// The device colour legend below the "Cockpit Bindings" heading. Pulled here so
-/// the central panel in `mod.rs` stays short.
+/// The device colour legend below the "Cockpit Bindings" heading.
 pub(super) fn legend(ui: &mut egui::Ui) {
     ui.horizontal(|ui| {
         let chip = |ui: &mut egui::Ui, col: egui::Color32, txt: &str| {

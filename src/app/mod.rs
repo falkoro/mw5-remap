@@ -9,6 +9,7 @@ mod export_ui;
 mod panels;
 mod tabs;
 mod toolbar;
+mod vjoy_style;
 mod vjoy_ui;
 mod widgets;
 
@@ -67,7 +68,7 @@ pub struct App {
     community: Arc<Mutex<crate::community::CommunityState>>, // async listing fetch result
     community_dl: Arc<Mutex<crate::community::DownloadState>>, // async profile download result
     notif_log: Vec<String>, // history of status changes for the top-right notification feed (newest last)
-    notif_collapsed: bool, // when true the feed shows only a small 🔔 badge (history preserved)
+    notif_collapsed: bool, // when true the feed shows only a slim "● n" pill (history preserved)
     live_muted: HashSet<(u16, u16)>, // devices soft-muted from the LIVE display (glow + Detected); UI-only, no HidHide
 }
 
@@ -123,7 +124,7 @@ impl App {
             community: Arc::new(Mutex::new(crate::community::CommunityState::Idle)),
             community_dl: Arc::new(Mutex::new(crate::community::DownloadState::Idle)),
             notif_log: Vec::new(),
-            notif_collapsed: true, // start collapsed: show only the 🔔 badge until clicked
+            notif_collapsed: true, // start collapsed: show only the "● n" pill until clicked
             live_muted: HashSet::new(),
         };
         app.load_selected();

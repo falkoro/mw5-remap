@@ -4,6 +4,7 @@
 //! `mod.rs` so the egui shell stays within the per-module size budget. Each fn takes
 //! only the app state it touches (mirrors how `panels`/`toolbar` are wired).
 
+use super::vjoy_style::{ACCENT, BG, CARD, CARD2, MUTED, RIM, TXT};
 use super::widgets::{persist, Capture};
 use super::vjoy_ui::VjoyCapture;
 use super::{community_ui, export_ui, panels, toolbar, vjoy_ui, ExportOpts};
@@ -126,29 +127,39 @@ pub(super) fn vjoy_setup_tab(
     hide_state: &PathBuf,
 ) {
     vjoy_ui::panel(ctx, devices, vjoy_map, vjoy_capture, vjoy_sel, vjoy_btn_pick, vjoy_axis_pick, vjoy_pair_fwd, vjoy_pair_rev, vjoy_paused, status);
-    egui::CentralPanel::default().show(ctx, |ui| {
-        ui.add_space(6.0);
-        ui.heading("🕹 vJoy Setup");
+    let frame = egui::Frame::central_panel(&ctx.style()).fill(BG).inner_margin(egui::Margin::symmetric(14.0, 10.0));
+    egui::CentralPanel::default().frame(frame).show(ctx, |ui| {
+        ui.label(egui::RichText::new("How it works").strong().size(12.0).color(ACCENT));
         ui.label(egui::RichText::new(
             "Route any connected stick onto the virtual vJoy device above, then bind vJoy's buttons/axes over in the 🎮 Bind tab — it shows up as a normal joystick.",
-        ).color(egui::Color32::from_rgb(95, 100, 115)));
-        ui.separator();
-        ui.strong("Connected sticks");
-        ui.label(egui::RichText::new(
-            "Hide a physical stick from games so MW5 sees only vJoy. This app stays whitelisted in HidHide, so it keeps reading the hidden stick to feed vJoy.",
-        ).color(egui::Color32::from_rgb(95, 100, 115)));
-        if !elevated {
-            ui.label(egui::RichText::new("Run as admin to hide devices (use the “Run as admin” button in the Bind tab).")
-                .color(egui::Color32::from_rgb(150, 120, 60)));
-        }
-        ui.add_space(2.0);
-        if devices.is_empty() {
-            ui.label(egui::RichText::new("No controllers detected.").color(egui::Color32::from_rgb(150, 165, 190)));
-        } else {
-            for d in devices {
-                stick_row(ui, d, elevated, hidden, hide_state, status);
-            }
-        }
+        ).color(MUTED));
+        ui.add_space(10.0);
+
+        egui::Frame::none()
+            .fill(CARD)
+            .stroke(egui::Stroke::new(1.0, RIM))
+            .rounding(egui::Rounding::same(8.0))
+            .inner_margin(egui::Margin::symmetric(12.0, 10.0))
+            .show(ui, |ui| {
+                ui.label(egui::RichText::new("CONNECTED STICKS").strong().size(11.5).color(ACCENT));
+                ui.add_space(4.0);
+                ui.label(egui::RichText::new(
+                    "Hide a physical stick from games so MW5 sees only vJoy. This app stays whitelisted in HidHide, so it keeps reading the hidden stick to feed vJoy.",
+                ).size(11.5).color(MUTED));
+                if !elevated {
+                    ui.add_space(2.0);
+                    ui.label(egui::RichText::new("⚠ Run as admin to hide devices (use the “Run as admin” button in the Bind tab).")
+                        .size(11.5).color(egui::Color32::from_rgb(225, 170, 90)));
+                }
+                ui.add_space(6.0);
+                if devices.is_empty() {
+                    ui.label(egui::RichText::new("No controllers detected.").color(MUTED));
+                } else {
+                    for d in devices {
+                        stick_row(ui, d, elevated, hidden, hide_state, status);
+                    }
+                }
+            });
     });
 }
 
@@ -167,14 +178,28 @@ fn stick_row(
     hide_state: &PathBuf,
     status: &mut String,
 ) {
+    let is_vjoy = d.vid == VJOY_VID;
+    let tag = format!("VID_{:04X}", d.vid);
+    let is_hidden = !is_vjoy && hidden.iter().any(|p| p.to_uppercase().contains(&tag));
+    egui::Frame::none()
+        .fill(CARD2)
+        .stroke(egui::Stroke::new(1.0, if is_hidden { ACCENT } else { RIM }))
+        .rounding(egui::Rounding::same(7.0))
+        .inner_margin(egui::Margin::symmetric(10.0, 6.0))
+        .show(ui, |ui| {
     ui.horizontal(|ui| {
-        ui.label(format!("•  {}   ({:04X}:{:04X})", d.name, d.vid, d.pid));
-        if d.vid == VJOY_VID {
-            ui.label(egui::RichText::new("← vJoy (MW5 must see this)").color(egui::Color32::from_rgb(95, 100, 115)));
+        let dot = if is_vjoy { ACCENT } else if is_hidden { egui::Color32::from_rgb(120, 128, 145) } else { egui::Color32::from_rgb(86, 156, 235) };
+        ui.label(egui::RichText::new("●").size(10.0).color(dot));
+        ui.label(egui::RichText::new(&d.name).strong().color(TXT));
+        ui.label(egui::RichText::new(format!("{:04X}:{:04X}", d.vid, d.pid)).size(11.0).color(MUTED));
+        if is_vjoy {
+            ui.label(egui::RichText::new("← vJoy (MW5 must see this)").size(11.5).color(ACCENT));
             return;
         }
-        let tag = format!("VID_{:04X}", d.vid);
-        let is_hidden = hidden.iter().any(|p| p.to_uppercase().contains(&tag));
+        if is_hidden {
+            ui.label(egui::RichText::new("hidden from MW5").size(11.0).color(ACCENT));
+        }
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
         if !elevated {
             ui.add_enabled(false, egui::Button::new("Hide from MW5"));
         } else if is_hidden {
@@ -199,5 +224,8 @@ fn stick_row(
                 Err(e) => *status = e,
             }
         }
+        }); // right_to_left (hide/show controls)
     });
+        });
+    ui.add_space(5.0);
 }

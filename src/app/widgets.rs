@@ -125,11 +125,15 @@ pub(super) fn binding_row(
     } else {
         (pretty_token(&token), device_color(&token))
     };
-    // Unbound chips read as a quiet empty "slot"; bound/live chips are richly filled.
-    let fill = if empty { egui::Color32::from_rgb(44, 48, 60) } else { base };
-    let txt_col = if empty { egui::Color32::from_rgb(150, 158, 175) } else { egui::Color32::from_rgb(15, 18, 24) };
-    // Lighter, role-tinted border lifts the chip off the row; a bright rim sells the glow.
-    let stroke = if live { egui::Stroke::new(2.0, egui::Color32::from_rgb(150, 255, 190)) }
+    // Unbound chips read as a quiet empty "slot"; bound chips are richly filled; a LIVE
+    // chip switches to a vivid, unmistakable green so an active control jumps out instantly.
+    let fill = if empty { egui::Color32::from_rgb(44, 48, 60) }
+               else if live { egui::Color32::from_rgb(46, 232, 120) }
+               else { base };
+    let txt_col = if empty { egui::Color32::from_rgb(150, 158, 175) } else { egui::Color32::from_rgb(12, 24, 16) };
+    // Lighter, role-tinted border lifts the chip off the row; LIVE gets a thick bright rim
+    // (plus a blooming glow painted in chip_polish) so it can't be missed.
+    let stroke = if live { egui::Stroke::new(3.0, egui::Color32::from_rgb(205, 255, 220)) }
                  else if empty { egui::Stroke::new(1.0, egui::Color32::from_rgb(92, 100, 118)) }
                  else { egui::Stroke::new(1.5, lighten(base, 0.35)) };
     let chip = egui::Button::new(egui::RichText::new(text).color(txt_col).strong().size(14.0))
@@ -202,6 +206,19 @@ pub(super) fn lighten(c: egui::Color32, t: f32) -> egui::Color32 {
 /// without a real gradient mesh. No-op styling only; never affects click/capture.
 fn chip_polish(ui: &egui::Ui, resp: &egui::Response, fill: egui::Color32, live: bool, empty: bool) {
     let r = resp.rect;
+    // LIVE: bloom a few concentric translucent-green rings OUTSIDE the chip so an active
+    // control reads as a glowing button at a glance (painter_at would clip these, so use
+    // the unclipped ui painter for the halo).
+    if live {
+        let glow = ui.painter();
+        for &(grow, alpha) in &[(2.0f32, 70u8), (5.0, 40), (8.0, 20), (11.0, 9)] {
+            glow.rect_stroke(
+                r.expand(grow),
+                egui::Rounding::same(9.0 + grow),
+                egui::Stroke::new(2.0, egui::Color32::from_rgba_unmultiplied(130, 255, 175, alpha)),
+            );
+        }
+    }
     let p = ui.painter_at(r);
     if !empty && r.width() > 18.0 {
         let hl = lighten(fill, if live { 0.5 } else { 0.32 }).linear_multiply(0.7);
