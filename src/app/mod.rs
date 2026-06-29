@@ -6,11 +6,20 @@
 mod community_ui;
 mod export_ui;
 mod panels;
+mod tabs;
 mod toolbar;
 mod vjoy_ui;
 mod widgets;
 
 pub(crate) use export_ui::ExportOpts;
+
+/// Top-level view selector. The Bind tab is the press-to-bind grid editor; the
+/// vJoy Setup tab is the sole home of the vJoy routing UI.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Tab {
+    Bind,
+    VjoySetup,
+}
 
 use crate::games::{self, Action, Binding, GameProvider, Kind};
 use crate::vjoy_map::VjoyMap;
@@ -26,6 +35,7 @@ use widgets::Capture;
 pub struct App {
     games: Vec<Box<dyn GameProvider>>,
     selected: usize,
+    tab: Tab, // which top-level tab is showing (Bind = default editor, VjoySetup = routing)
     actions: Vec<Action>,
     rows: Vec<Binding>,
     devices: Vec<input::Device>,
@@ -78,6 +88,7 @@ impl App {
         let mut app = App {
             games,
             selected: 0,
+            tab: Tab::Bind,
             actions: Vec::new(),
             rows: Vec::new(),
             devices: Vec::new(),
@@ -209,7 +220,7 @@ impl eframe::App for App {
             }
         }
 
-        let App { games, selected, actions, rows, devices, capture, status, elevated, hidden, hide_state, textures, show_labels, update, show_export_dialog, export_opts, pending_export, export_shot_sent, last_panel_rect, profile, profile_input, vjoy_map, vjoy_sel, vjoy_capture, vjoy_btn_pick, vjoy_axis_pick, vjoy_pair_fwd, vjoy_pair_rev, vjoy_paused, show_community, community, community_dl } = self;
+        let App { games, selected, tab, actions, rows, devices, capture, status, elevated, hidden, hide_state, textures, show_labels, update, show_export_dialog, export_opts, pending_export, export_shot_sent, last_panel_rect, profile, profile_input, vjoy_map, vjoy_sel, vjoy_capture, vjoy_btn_pick, vjoy_axis_pick, vjoy_pair_fwd, vjoy_pair_rev, vjoy_paused, show_community, community, community_dl } = self;
 
         // token -> bound action label, so the device diagram can show WHAT is bound
         // to each control (not just the control's name).
@@ -226,54 +237,32 @@ impl eframe::App for App {
         crate::vjoy::set_active(vjoy_active);
         if vjoy_active { vjoy_map.apply(devices); }
 
-        panels::update_banner(ctx, status, update);
-        let reload = toolbar::top_bar(ctx, games, selected, rows, actions, status, *elevated, hidden, hide_state, show_export_dialog, profile, profile_input, show_community, community);
-        if *show_community {
-            community_ui::dialog(ctx, show_community, community, community_dl, &games[*selected].name().to_string(), status);
-        }
-        vjoy_ui::panel(ctx, devices, vjoy_map, vjoy_capture, vjoy_sel, vjoy_btn_pick, vjoy_axis_pick, vjoy_pair_fwd, vjoy_pair_rev, vjoy_paused, status);
-
-        egui::SidePanel::left("devices").resizable(true).default_width(440.0).show(ctx, |ui| {
-            *last_panel_rect = ui.max_rect();
-            if let Some(tex) = textures.as_ref() {
-                let filter = pending_export.as_ref();
-                crate::visual::sidebar(ui, tex, devices, games[*selected].as_ref(), show_labels, &bound, vjoy_map, filter);
-            } else {
-                ui.label("Loading device images…");
-            }
+        // Top-level tab selector — ABOVE everything else. Bind = the editor; vJoy
+        // Setup = the routing UI. The feed loop above runs regardless of tab.
+        egui::TopBottomPanel::top("tabs").show(ctx, |ui| {
+            ui.add_space(3.0);
+            ui.horizontal(|ui| {
+                ui.selectable_value(tab, Tab::Bind, "🎮 Bind");
+                ui.selectable_value(tab, Tab::VjoySetup, "🕹 vJoy Setup");
+            });
+            ui.add_space(3.0);
         });
 
-        panels::central(ctx, games, *selected, textures, devices, capture, rows, actions, status, vjoy_map, &groups);
-
-        panels::footers(ctx, status);
-
-        // Export device-sheet flow: dialog -> (filtered repaint) -> screenshot -> crop + write.
-        // We arm `pending_export` first so the NEXT frame paints the side panel with the
-        // chosen device filter, THEN issue the Screenshot command — so the captured frame
-        // already reflects the selected devices.
-        if *show_export_dialog && export_ui::dialog(ctx, show_export_dialog, export_opts, show_labels) {
-            *show_export_dialog = false;
-            *pending_export = Some(export_opts.clone());
-            *export_shot_sent = false;
-            ctx.request_repaint();
-        }
-        if let Some(opts) = pending_export.clone() {
-            if !*export_shot_sent {
-                // This frame painted the filtered panel; now capture it.
-                *export_shot_sent = true;
-                ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot);
-                ctx.request_repaint();
-            } else if let Some(shot) = export_ui::take_screenshot(ctx) {
-                *pending_export = None;
-                *export_shot_sent = false;
-                match export_ui::crop_to_image(&shot, *last_panel_rect, ctx.pixels_per_point()) {
-                    Some(img) => *status = export_ui::write_files(&img, &opts),
-                    None => *status = "Export failed: device panel not visible.".into(),
-                }
-            } else {
-                ctx.request_repaint(); // wait for the screenshot event to arrive
+        let reload = match tab {
+            Tab::Bind => tabs::bind_tab(
+                ctx, games, selected, actions, rows, devices, capture, status, *elevated, hidden,
+                hide_state, textures, show_labels, update, show_export_dialog, export_opts,
+                pending_export, export_shot_sent, last_panel_rect, profile, profile_input,
+                show_community, community, community_dl, vjoy_map, &bound, &groups,
+            ),
+            Tab::VjoySetup => {
+                tabs::vjoy_setup_tab(
+                    ctx, devices, vjoy_map, vjoy_capture, vjoy_sel, vjoy_btn_pick, vjoy_axis_pick,
+                    vjoy_pair_fwd, vjoy_pair_rev, vjoy_paused, status,
+                );
+                false
             }
-        }
+        };
 
         if reload { self.load_selected(); }
         ctx.request_repaint_after(Duration::from_millis(30));

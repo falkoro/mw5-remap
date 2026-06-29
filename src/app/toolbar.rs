@@ -119,8 +119,8 @@ pub(super) fn top_bar(
             // (Config-lock feature removed: MW5 doesn't actually rewrite the bindings on
             // launch, and a read-only config can make MW5 ignore it — so save() just
             // ensures the file is writable and leaves it that way.)
-            // vJoy routing now lives in its own "Route to vJoy" panel (src/app/vjoy_ui.rs):
-            // config-driven, any stick -> vJoy, no device-specific code here anymore.
+            // vJoy routing now lives in its own "🕹 vJoy Setup" tab (src/app/tabs.rs ->
+            // vjoy_ui.rs): config-driven, any stick -> vJoy, no routing UI in this view.
             if ui.add_enabled(avail, egui::Button::new("📊 Export diagram"))
                 .on_hover_text("Export the device images (with callouts) as PNG and/or PDF").clicked()
             {
