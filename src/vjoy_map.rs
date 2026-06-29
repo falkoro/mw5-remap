@@ -17,6 +17,9 @@ use std::path::PathBuf;
 pub enum Source {
     Button(u8),
     Axis(u8),
+    /// Two axes combined into ONE bipolar output: (forward/positive index, reverse/negative index).
+    /// e.g. two toe pedals -> one centred throttle (forward toe up, reverse toe down).
+    Pair(u8, u8),
 }
 
 /// A vJoy output: a button (1..128) or an axis (by HID usage id, e.g. `HID_X`).
@@ -63,15 +66,24 @@ impl Source {
         match self {
             Source::Button(b) => format!("Button {}", b + 1),
             Source::Axis(a) => format!("Axis {}", a + 1),
+            Source::Pair(p, n) => format!("Axes {}+ / {}-", p + 1, n + 1),
         }
     }
     fn encode(&self) -> String {
         match self {
             Source::Button(b) => format!("B{b}"),
             Source::Axis(a) => format!("A{a}"),
+            Source::Pair(p, n) => format!("P{p}.{n}"),
         }
     }
     fn decode(s: &str) -> Option<Source> {
+        // `P{p}.{n}` = bipolar axis pair (both indices 0..7).
+        if let Some(rest) = s.strip_prefix('P') {
+            let (p, n) = rest.split_once('.')?;
+            let (p, n) = (p.parse::<u8>().ok()?, n.parse::<u8>().ok()?);
+            if p >= 8 || n >= 8 { return None; }
+            return Some(Source::Pair(p, n));
+        }
         let n = s.get(1..)?.parse::<u8>().ok()?;
         match s.as_bytes().first()? {
             // Reject button bits >= 32: resolve()'s `1u32 << bit` would overflow/UB.
@@ -217,6 +229,14 @@ impl VjoyMap {
                     let on = pressed(b) ^ m.invert;
                     Call::Axis(u, vjoy::scale(if on { 65535 } else { 0 }))
                 }
+                // Two axes -> one centred bipolar axis. combine_toes already returns the
+                // vJoy-scaled value, so DON'T wrap in scale(). invert swaps fwd/rev.
+                (Source::Pair(p, n), Target::Axis(u)) => {
+                    let (fwd, rev) = (axis(p), axis(n));
+                    Call::Axis(u, if m.invert { vjoy::combine_toes(rev, fwd) } else { vjoy::combine_toes(fwd, rev) })
+                }
+                // A bipolar pair only makes sense onto an axis; skip anything else.
+                (Source::Pair(_, _), Target::Button(_)) => continue,
             });
         }
         out
@@ -253,6 +273,36 @@ mod tests {
             let back = parse_line(&line).expect("parse");
             assert_eq!(back, m, "round-trip failed for line {line:?}");
         }
+    }
+
+    #[test]
+    fn pair_line_round_trip() {
+        let m = Mapping { vid: 0x346E, pid: 0x1200, source: Source::Pair(0, 1),
+            target: Target::Axis(vjoy::HID_X), invert: false };
+        let line = encode_line(&m);
+        assert_eq!(line.split('\t').nth(2), Some("P0.1"), "pair encodes as P{{p}}.{{n}}");
+        assert_eq!(parse_line(&line).expect("parse"), m, "round-trip failed for {line:?}");
+        // Out-of-range indices are rejected.
+        assert_eq!(Source::decode("P8.0"), None);
+    }
+
+    #[test]
+    fn resolve_pair_combines_toes() {
+        let map = VjoyMap { mappings: vec![
+            Mapping { vid: 0x346E, pid: 0x1200, source: Source::Pair(0, 1),
+                target: Target::Axis(vjoy::HID_X), invert: false },
+        ] };
+        let axis_val = |d: Device| match map.resolve(&[d]).as_slice() {
+            [Call::Axis(_, v)] => *v, other => panic!("expected one axis call, got {other:?}"),
+        };
+        // both toes at rest -> centre
+        assert_eq!(axis_val(dev(0x346E, 0x1200)), vjoy::VJOY_CENTRE);
+        // forward axis high -> above centre
+        let mut fwd = dev(0x346E, 0x1200); fwd.axes[0] = 65535;
+        assert!(axis_val(fwd) > vjoy::VJOY_CENTRE, "forward toe should push above centre");
+        // reverse axis high -> below centre
+        let mut rev = dev(0x346E, 0x1200); rev.axes[1] = 65535;
+        assert!(axis_val(rev) < vjoy::VJOY_CENTRE, "reverse toe should push below centre");
     }
 
     #[test]

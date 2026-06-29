@@ -49,6 +49,8 @@ pub struct App {
     vjoy_capture: Option<VjoyCapture>,  // pending "actuate a control to bind it" capture
     vjoy_btn_pick: u8,                  // vJoy button number the next bind targets
     vjoy_axis_pick: u32,                // vJoy axis (HID usage) the next bind targets
+    vjoy_pair_fwd: u8,                  // "combine 2 axes" forward (positive) source axis index
+    vjoy_pair_rev: u8,                  // "combine 2 axes" reverse (negative) source axis index
     vjoy_paused: bool,                  // pause feeding without deleting mappings
     show_community: bool,               // "🌐 Community profiles" browser open?
     community: Arc<Mutex<crate::community::CommunityState>>, // async listing fetch result
@@ -99,6 +101,8 @@ impl App {
             vjoy_capture: None,
             vjoy_btn_pick: 1,
             vjoy_axis_pick: crate::vjoy::HID_X,
+            vjoy_pair_fwd: 0,
+            vjoy_pair_rev: 1,
             vjoy_paused: false,
             show_community: false,
             community: Arc::new(Mutex::new(crate::community::CommunityState::Idle)),
@@ -205,7 +209,7 @@ impl eframe::App for App {
             }
         }
 
-        let App { games, selected, actions, rows, devices, capture, status, elevated, hidden, hide_state, textures, show_labels, update, show_export_dialog, export_opts, pending_export, export_shot_sent, last_panel_rect, profile, profile_input, vjoy_map, vjoy_sel, vjoy_capture, vjoy_btn_pick, vjoy_axis_pick, vjoy_paused, show_community, community, community_dl } = self;
+        let App { games, selected, actions, rows, devices, capture, status, elevated, hidden, hide_state, textures, show_labels, update, show_export_dialog, export_opts, pending_export, export_shot_sent, last_panel_rect, profile, profile_input, vjoy_map, vjoy_sel, vjoy_capture, vjoy_btn_pick, vjoy_axis_pick, vjoy_pair_fwd, vjoy_pair_rev, vjoy_paused, show_community, community, community_dl } = self;
 
         // token -> bound action label, so the device diagram can show WHAT is bound
         // to each control (not just the control's name).
@@ -227,7 +231,7 @@ impl eframe::App for App {
         if *show_community {
             community_ui::dialog(ctx, show_community, community, community_dl, &games[*selected].name().to_string(), status);
         }
-        vjoy_ui::panel(ctx, devices, vjoy_map, vjoy_capture, vjoy_sel, vjoy_btn_pick, vjoy_axis_pick, vjoy_paused, status);
+        vjoy_ui::panel(ctx, devices, vjoy_map, vjoy_capture, vjoy_sel, vjoy_btn_pick, vjoy_axis_pick, vjoy_pair_fwd, vjoy_pair_rev, vjoy_paused, status);
 
         egui::SidePanel::left("devices").resizable(true).default_width(440.0).show(ctx, |ui| {
             *last_panel_rect = ui.max_rect();

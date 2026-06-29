@@ -4,7 +4,7 @@
 //! `vjoy_map.txt`; feeding is active whenever ≥1 mapping exists (unless paused).
 
 use crate::input::Device;
-use crate::vjoy_map::{Mapping, Source, Target, VjoyMap, VJOY_AXES};
+use crate::vjoy_map::{axis_name, Mapping, Source, Target, VjoyMap, VJOY_AXES};
 use eframe::egui;
 
 /// An in-progress "click a vJoy target, then actuate a physical control" capture.
@@ -61,6 +61,8 @@ pub(super) fn panel(
     sel: &mut Option<(u16, u16)>,
     btn_pick: &mut u8,
     axis_pick: &mut u32,
+    pair_fwd: &mut u8,
+    pair_rev: &mut u8,
     paused: &mut bool,
     status: &mut String,
 ) {
@@ -128,6 +130,31 @@ pub(super) fn panel(
             }
         });
 
+        // Combine TWO physical axes into ONE bipolar vJoy axis (e.g. two toe pedals ->
+        // one forward/reverse throttle: centre=stop, fwd axis up, rev axis down).
+        ui.horizontal_wrapped(|ui| {
+            let cur = sel.and_then(|s| devices.iter().find(|d| (d.vid, d.pid) == s));
+            ui.label("⟲ Combine 2 axes → vJoy");
+            egui::ComboBox::from_id_salt("vjoy_pair_axis").selected_text(axis_name(*axis_pick)).show_ui(ui, |ui| {
+                for u in VJOY_AXES { ui.selectable_value(axis_pick, u, axis_name(u)); }
+            });
+            ui.label("fwd");
+            axis_index_combo(ui, "vjoy_pair_fwd", pair_fwd, cur);
+            ui.label("rev");
+            axis_index_combo(ui, "vjoy_pair_rev", pair_rev, cur);
+            let ok = sel.is_some() && pair_fwd != pair_rev;
+            if ui.add_enabled(ok, egui::Button::new("➕ Add combine"))
+                .on_hover_text("Map the forward axis (up) + reverse axis (down) onto ONE centred bipolar vJoy axis.")
+                .clicked()
+            {
+                if let Some((vid, pid)) = *sel {
+                    map.add(Mapping { vid, pid, source: Source::Pair(*pair_fwd, *pair_rev), target: Target::Axis(*axis_pick), invert: false });
+                    let _ = map.save();
+                    *status = format!("Combined Axis {}+/Axis {}- → vJoy Axis {}.", *pair_fwd + 1, *pair_rev + 1, axis_name(*axis_pick));
+                }
+            }
+        });
+
         // Live mappings list with per-row remove + invert toggle.
         if !map.mappings.is_empty() {
             ui.add_space(2.0);
@@ -158,6 +185,17 @@ pub(super) fn panel(
 fn map_dirty(map: &VjoyMap, status: &mut String) {
     let _ = map.save();
     *status = "Updated vJoy mapping.".into();
+}
+
+/// A small "Axis N" picker over a stick's present axes (falls back to all 8 slots).
+fn axis_index_combo(ui: &mut egui::Ui, id: &str, idx: &mut u8, cur: Option<&Device>) {
+    egui::ComboBox::from_id_salt(id).selected_text(format!("Axis {}", *idx + 1)).show_ui(ui, |ui| {
+        for a in 0..8u8 {
+            if cur.map(|d| d.present[a as usize]).unwrap_or(true) {
+                ui.selectable_value(idx, a, format!("Axis {}", a + 1));
+            }
+        }
+    });
 }
 
 fn start_capture(

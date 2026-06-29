@@ -20,6 +20,8 @@ fn direct_token(p: &dyn GameProvider, dev: &Device, idx: usize, src: Source) -> 
     match src {
         Source::Button(b) => p.button_token(dev, b as u32 + 1, idx), // bit -> 1-based number
         Source::Axis(a) => p.axis_token(dev, a as usize, idx),
+        // A combined bipolar pair has no single direct physical token to remap.
+        Source::Pair(..) => None,
     }
 }
 
