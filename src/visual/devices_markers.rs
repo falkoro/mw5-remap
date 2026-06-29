@@ -3,22 +3,12 @@
 //! Positions are rough defaults — fine-tune them live with the ✥ Edit layout drag, which
 //! persists per-device to `marker_layout.txt`.
 
-use super::{m, Marker};
+use super::{m, mm, Marker, MultiMarker};
 
 // MHG grip: physical reference labels. Button numbers differ per firmware, so we
 // don't guess them here — use the live board below to map a button to its number.
 // The POV hat does light up (we can read the hat octant directly).
 pub(super) const MHG_MARKERS: &[Marker] = &[
-    // POV hat: ALL 8 positions, each shows the action bound to it ("Hat ↗ · <action>")
-    // and lights individually. Cardinals usually = look; diagonals = camera/chain-fire.
-    m(0.500, 0.235, "", "Hat ↑", "Joystick_Hat_1"),
-    m(0.535, 0.245, "", "Hat ↗", "Joystick_Hat_2"),
-    m(0.555, 0.270, "", "Hat →", "Joystick_Hat_3"),
-    m(0.535, 0.295, "", "Hat ↘", "Joystick_Hat_4"),
-    m(0.500, 0.305, "", "Hat ↓", "Joystick_Hat_5"),
-    m(0.465, 0.295, "", "Hat ↙", "Joystick_Hat_6"),
-    m(0.445, 0.270, "", "Hat ←", "Joystick_Hat_7"),
-    m(0.465, 0.245, "", "Hat ↖", "Joystick_Hat_8"),
     // Analog thumb / POV hat = two axes: winmm U(4) = vertical, V(5) = horizontal.
     // Two markers so BOTH directions light when you sweep it.
     m(0.645, 0.215, "", "Thumb/POV hat ↕ (look)", "Joystick_Axis4"),
@@ -33,6 +23,25 @@ pub(super) const MHG_MARKERS: &[Marker] = &[
     m(0.45, 0.345, "", "Rocker switch", "Joystick_Button5"),
     m(0.37, 0.49, "", "Pinky flip", "Joystick_Button6"),
 ];
+
+// MULTI-INPUT markers: ONE physical control that carries several inputs, shown as a
+// single stacked callout (one box, every direction listed) that glows whichever
+// direction is live — instead of N separate dots crowding the same spot.
+//
+// MOZA MHG coolie/POV hat: a single 8-way hat emitting Joystick_Hat_1..8. The diagram's
+// spoke ring (MHG_HATS) shows WHICH way is pressed; this marker lists WHAT each way is
+// bound to and lights that row live. Drag the whole group by its dot (keyed "Coolie hat").
+pub(super) const MHG_HAT_INPUTS: &[(&str, &str)] = &[
+    ("↑  N", "Joystick_Hat_1"),
+    ("↗  NE", "Joystick_Hat_2"),
+    ("→  E", "Joystick_Hat_3"),
+    ("↘  SE", "Joystick_Hat_4"),
+    ("↓  S", "Joystick_Hat_5"),
+    ("↙  SW", "Joystick_Hat_6"),
+    ("←  W", "Joystick_Hat_7"),
+    ("↖  NW", "Joystick_Hat_8"),
+];
+pub(super) const MHG_MULTI: &[MultiMarker] = &[mm(0.50, 0.27, "Coolie hat", MHG_HAT_INPUTS)];
 
 // AB6 gimbal -> the two aim axes. Numbers = the Joystick_Axis index (= the token).
 pub(super) const BASE_MARKERS: &[Marker] = &[

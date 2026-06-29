@@ -7,7 +7,7 @@
 //! + override cache (thread-local — the egui panel only ever touches it from the UI
 //! thread) and the drag interaction that edits it.
 
-use super::{Marker, ACCENT, HOT};
+use super::{Marker, MultiMarker, ACCENT, HOT};
 use eframe::egui;
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -81,6 +81,11 @@ pub(super) fn resolved_pos(device_key: &str, mk: &Marker) -> (f32, f32) {
     pos(device_key, mk.label).unwrap_or((mk.nx, mk.ny))
 }
 
+/// Same as `resolved_pos`, for a multi-input marker (keyed on its `label`).
+pub(super) fn resolved_pos_multi(device_key: &str, mk: &MultiMarker) -> (f32, f32) {
+    pos(device_key, mk.label).unwrap_or((mk.nx, mk.ny))
+}
+
 fn set(device_key: &str, marker_id: &str, p: (f32, f32)) {
     STATE.with(|s| { s.borrow_mut().ov.insert((device_key.to_string(), marker_id.to_string()), p); });
 }
@@ -96,28 +101,40 @@ pub fn reset_all() {
     });
 }
 
+/// One draggable handle (white ring) at a callout dot: dragging updates that marker's
+/// per-device override and saves it on release. Shared by the single- and multi-marker
+/// drag loops; `id` keeps their interactions distinct.
+fn drag_handle(ui: &egui::Ui, painter: &egui::Painter, rect: egui::Rect, device_key: &str, id: egui::Id, label: &str, nx: f32, ny: f32) {
+    let dot = rect.min + egui::vec2(nx * rect.width(), ny * rect.height());
+    let handle = egui::Rect::from_center_size(dot, egui::vec2(16.0, 16.0));
+    let resp = ui.interact(handle, id, egui::Sense::drag());
+    let lit = resp.hovered() || resp.dragged();
+    painter.circle_stroke(dot, if lit { 10.0 } else { 8.0 },
+        egui::Stroke::new(2.0, if lit { HOT } else { ACCENT }));
+    painter.circle_stroke(dot, if lit { 10.0 } else { 8.0 },
+        egui::Stroke::new(1.0, egui::Color32::WHITE));
+    if resp.dragged() {
+        let d = resp.drag_delta();
+        let nx = (nx + d.x / rect.width()).clamp(0.0, 1.0);
+        let ny = (ny + d.y / rect.height()).clamp(0.0, 1.0);
+        set(device_key, label, (nx, ny));
+    }
+    if resp.drag_stopped() { flush(); }
+    let _ = resp.on_hover_cursor(egui::CursorIcon::Grab);
+}
+
 /// Edit-mode: turn each callout dot into a draggable handle (drawn as a white ring).
-/// Dragging updates that marker's per-device override and saves it on release.
 /// `markers` carry their already-resolved positions (so the handle sits on the dot).
 pub(super) fn drag_markers(ui: &egui::Ui, painter: &egui::Painter, rect: egui::Rect, device_key: &str, markers: &[Marker]) {
     for (i, mk) in markers.iter().enumerate() {
-        let dot = rect.min + egui::vec2(mk.nx * rect.width(), mk.ny * rect.height());
-        let handle = egui::Rect::from_center_size(dot, egui::vec2(16.0, 16.0));
-        let id = egui::Id::new(("marker_drag", device_key, i));
-        let resp = ui.interact(handle, id, egui::Sense::drag());
-        let lit = resp.hovered() || resp.dragged();
-        painter.circle_stroke(dot, if lit { 10.0 } else { 8.0 },
-            egui::Stroke::new(2.0, if lit { HOT } else { ACCENT }));
-        painter.circle_stroke(dot, if lit { 10.0 } else { 8.0 },
-            egui::Stroke::new(1.0, egui::Color32::WHITE));
-        if resp.dragged() {
-            let d = resp.drag_delta();
-            let nx = (mk.nx + d.x / rect.width()).clamp(0.0, 1.0);
-            let ny = (mk.ny + d.y / rect.height()).clamp(0.0, 1.0);
-            set(device_key, mk.label, (nx, ny));
-        }
-        if resp.drag_stopped() { flush(); }
-        let _ = resp.on_hover_cursor(egui::CursorIcon::Grab);
+        drag_handle(ui, painter, rect, device_key, egui::Id::new(("marker_drag", device_key, i)), mk.label, mk.nx, mk.ny);
+    }
+}
+
+/// Edit-mode drag for multi-input markers (whole group moves by its single dot).
+pub(super) fn drag_multi(ui: &egui::Ui, painter: &egui::Painter, rect: egui::Rect, device_key: &str, markers: &[MultiMarker]) {
+    for (i, mk) in markers.iter().enumerate() {
+        drag_handle(ui, painter, rect, device_key, egui::Id::new(("multi_drag", device_key, i)), mk.label, mk.nx, mk.ny);
     }
 }
 

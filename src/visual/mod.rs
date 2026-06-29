@@ -18,8 +18,8 @@ mod resolve;
 use crate::games::GameProvider;
 use crate::input::Device;
 use crate::vjoy_map::VjoyMap;
-use devices_markers::{BASE_MARKERS, MHG_HATS, MHG_MARKERS, PEDAL_MARKERS, VKB_HATS, VKB_MARKERS};
-use draw::{draw_callouts, draw_hats};
+use devices_markers::{BASE_MARKERS, MHG_HATS, MHG_MARKERS, MHG_MULTI, PEDAL_MARKERS, VKB_HATS, VKB_MARKERS};
+use draw::{draw_callouts, draw_hats, draw_multi_callouts};
 use eframe::egui;
 use std::collections::HashMap;
 
@@ -50,6 +50,21 @@ pub(crate) struct Marker {
 }
 pub(crate) const fn m(nx: f32, ny: f32, num: &'static str, label: &'static str, token: &'static str) -> Marker {
     Marker { nx, ny, num, label, token }
+}
+
+/// One physical control that carries SEVERAL inputs (a hat's directions, a rocker's
+/// in/out). Rendered ONCE as a compact stacked list of its `inputs` — each entry is
+/// `(sub-label, token)` and glows individually when its token is live. `label` is the
+/// control name shown as the box header; `(nx, ny)` is the dot on the image (draggable
+/// via `layout`, keyed on `label`, exactly like a single `Marker`).
+pub(crate) struct MultiMarker {
+    nx: f32,
+    ny: f32,
+    label: &'static str,
+    inputs: &'static [(&'static str, &'static str)],
+}
+pub(crate) const fn mm(nx: f32, ny: f32, label: &'static str, inputs: &'static [(&'static str, &'static str)]) -> MultiMarker {
+    MultiMarker { nx, ny, label, inputs }
 }
 
 pub struct Textures {
@@ -196,7 +211,7 @@ fn live_axes(ui: &mut egui::Ui, devices: &[Device], p: &dyn GameProvider) {
 #[allow(clippy::too_many_arguments)]
 fn image_block(
     ui: &mut egui::Ui, caption: &str, tex: &egui::TextureHandle, w: f32,
-    markers: &[Marker], hats: &[(f32, f32, u8)], hot: &[String], octant: Option<u32>, show: bool,
+    markers: &[Marker], multi: &[MultiMarker], hats: &[(f32, f32, u8)], hot: &[String], octant: Option<u32>, show: bool,
     bound: &HashMap<String, String>, remap: &HashMap<String, String>, device_key: &str, edit: bool,
 ) {
     ui.add_space(8.0);
@@ -211,9 +226,19 @@ fn image_block(
             let (nx, ny) = layout::resolved_pos(device_key, mk);
             m(nx, ny, mk.num, mk.label, mk.token)
         }).collect();
+        // Multi-input markers (a hat's directions, a rocker's in/out) carry a LIST of
+        // tokens and render once as a stacked, individually-glowing list.
+        let resolved_multi: Vec<MultiMarker> = multi.iter().map(|mk| {
+            let (nx, ny) = layout::resolved_pos_multi(device_key, mk);
+            mm(nx, ny, mk.label, mk.inputs)
+        }).collect();
         draw_hats(&painter, rect, hats, octant);
         draw_callouts(&painter, rect, &resolved, hot, bound, remap);
-        if edit { layout::drag_markers(ui, &painter, rect, device_key, &resolved); }
+        draw_multi_callouts(&painter, rect, &resolved_multi, hot, bound, remap);
+        if edit {
+            layout::drag_markers(ui, &painter, rect, device_key, &resolved);
+            layout::drag_multi(ui, &painter, rect, device_key, &resolved_multi);
+        }
     }
 }
 
@@ -289,7 +314,7 @@ pub fn sidebar(
         ui.set_max_width(iw); // bound the inner ui so ui.columns splits correctly
         // Main flight stick: full-width and prominent (it carries the most controls).
         if want_stick {
-            image_block(ui, "MHG Flight Stick", &tex.stick, iw, MHG_MARKERS, MHG_HATS, &hot, oct, markers_visible, bound, &remap, "stick", edit);
+            image_block(ui, "MHG Flight Stick", &tex.stick, iw, MHG_MARKERS, MHG_MULTI, MHG_HATS, &hot, oct, markers_visible, bound, &remap, "stick", edit);
             ui.add_space(6.0);
         }
         // Secondary devices in a 2-up grid (scales as more get added: base, pedals,
@@ -298,10 +323,10 @@ pub fn sidebar(
             ui.columns(2, |cols| {
                 let cw = (iw - 12.0) / 2.0;
                 if want_base {
-                    image_block(&mut cols[0], "AB6 Base", &tex.base, cw, BASE_MARKERS, &[], &hot, None, markers_visible, bound, &remap, "base", edit);
+                    image_block(&mut cols[0], "AB6 Base", &tex.base, cw, BASE_MARKERS, &[], &[], &hot, None, markers_visible, bound, &remap, "base", edit);
                 }
                 if want_pedals {
-                    image_block(&mut cols[1], "MRP Pedals", &tex.pedals, cw, PEDAL_MARKERS, &[], &hot, None, markers_visible, bound, &remap, "pedals", edit);
+                    image_block(&mut cols[1], "MRP Pedals", &tex.pedals, cw, PEDAL_MARKERS, &[], &[], &hot, None, markers_visible, bound, &remap, "pedals", edit);
                 }
             });
         }
@@ -309,7 +334,7 @@ pub fn sidebar(
         // the live panel only; the export capture (`filter`) targets the MOZA rig sheet.
         if filter.is_none() {
             ui.add_space(6.0);
-            image_block(ui, "VKB Gladiator EVO", &tex.vkb, iw, VKB_MARKERS, VKB_HATS, &hot, vkb_oct, markers_visible, bound, &remap, "vkb", edit);
+            image_block(ui, "VKB Gladiator EVO", &tex.vkb, iw, VKB_MARKERS, &[], VKB_HATS, &hot, vkb_oct, markers_visible, bound, &remap, "vkb", edit);
         }
     });
 }

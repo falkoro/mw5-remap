@@ -2,7 +2,7 @@
 //! the "is this token live?" test. No state here — every fn just paints into a
 //! `&egui::Painter` from coordinates/markers handed in by `super`.
 
-use super::{Marker, ACCENT, HOT};
+use super::{Marker, MultiMarker, ACCENT, HOT};
 use eframe::egui;
 use std::collections::HashMap;
 
@@ -76,6 +76,82 @@ pub(super) fn draw_callouts(painter: &egui::Painter, img: egui::Rect, markers: &
     };
     place(&left, true);
     place(&right, false);
+}
+
+/// Draw multi-input markers: ONE box per control listing every bound input on it
+/// (a hat's 8 directions, a rocker's in/out), each row glowing green when its token
+/// is live. The leader line + box-border light if ANY row is hot. Tokens resolve
+/// through `remap` (vJoy-aware) just like single callouts, so it lights correctly
+/// while the vJoy feeder is active too.
+pub(super) fn draw_multi_callouts(painter: &egui::Painter, img: egui::Rect, markers: &[MultiMarker], hot: &[String], bound: &HashMap<String, String>, remap: &HashMap<String, String>) {
+    let head_font = egui::FontId::proportional(11.0);
+    let row_font = egui::FontId::proportional(10.5);
+    let pad = egui::vec2(7.0, 5.0);
+    let row_gap = 2.0;
+    let indent = 13.0; // room for each row's status dot
+
+    for mk in markers {
+        let dot = img.min + egui::vec2(mk.nx * img.width(), mk.ny * img.height());
+
+        // Lay out the header + one galley per input (colour baked = green when hot).
+        let header = painter.layout_no_wrap(mk.label.to_string(), head_font.clone(), ACCENT);
+        let mut rows: Vec<(std::sync::Arc<egui::Galley>, bool)> = Vec::with_capacity(mk.inputs.len());
+        let mut any_lit = false;
+        for &(sub, raw_token) in mk.inputs {
+            let token = remap.get(raw_token).map(|s| s.as_str()).unwrap_or(raw_token);
+            let lit = token_hot(token, hot);
+            any_lit |= lit;
+            let text = match bound.get(token) {
+                Some(action) => format!("{sub} · {action}"),
+                None => format!("{sub} · (unbound)"),
+            };
+            let colour = if lit { HOT } else { egui::Color32::from_gray(225) };
+            rows.push((painter.layout_no_wrap(text, row_font.clone(), colour), lit));
+        }
+
+        // Box geometry: width = widest of header / (indented) rows; height = stacked.
+        let mut content_w = header.size().x;
+        let mut content_h = header.size().y + row_gap;
+        for (g, _) in &rows {
+            content_w = content_w.max(g.size().x + indent);
+            content_h += g.size().y + row_gap;
+        }
+        let box_size = egui::vec2(content_w, content_h - row_gap) + pad * 2.0;
+
+        // Sit the box beside the dot (right unless the dot hugs the right margin), then
+        // clamp fully inside the image so nothing clips.
+        let on_right = mk.nx < 0.62;
+        let raw_x = if on_right { dot.x + 16.0 } else { dot.x - 16.0 - box_size.x };
+        let bx = raw_x.clamp(img.left() + 2.0, (img.right() - box_size.x - 2.0).max(img.left() + 2.0));
+        let by = (dot.y - box_size.y * 0.5).clamp(img.top() + 2.0, (img.bottom() - box_size.y - 2.0).max(img.top() + 2.0));
+        let bg = egui::Rect::from_min_size(egui::pos2(bx, by), box_size);
+
+        let accent = if any_lit { HOT } else { ACCENT };
+        let anchor = egui::pos2(
+            if on_right { bg.left() } else { bg.right() },
+            dot.y.clamp(bg.top(), bg.bottom()),
+        );
+        painter.line_segment([dot, anchor], egui::Stroke::new(if any_lit { 2.5 } else { 1.5 }, accent));
+        painter.circle_filled(dot, if any_lit { 5.0 } else { 4.0 }, accent);
+        painter.circle_stroke(dot, if any_lit { 5.0 } else { 4.0 }, egui::Stroke::new(1.0, egui::Color32::BLACK));
+
+        painter.rect_filled(bg, 4.0, egui::Color32::from_rgba_unmultiplied(18, 20, 28, 230));
+        painter.rect_stroke(bg, 4.0, egui::Stroke::new(if any_lit { 2.0 } else { 1.0 }, accent));
+
+        // Header, then each input row with a left status dot (green when that row is hot).
+        let mut y = bg.min.y + pad.y;
+        let hx = bg.min.x + pad.x;
+        let hh = header.size().y;
+        painter.galley(egui::pos2(hx, y), header, ACCENT);
+        y += hh + row_gap;
+        for (g, lit) in rows {
+            let rh = g.size().y;
+            let cdot = egui::pos2(hx + 4.0, y + rh * 0.5);
+            painter.circle_filled(cdot, 3.0, if lit { HOT } else { egui::Color32::from_gray(90) });
+            painter.galley(egui::pos2(hx + indent, y), g, egui::Color32::WHITE);
+            y += rh + row_gap;
+        }
+    }
 }
 
 /// Draw a hat as radial spokes (way-count visible); the live octant lights green.
