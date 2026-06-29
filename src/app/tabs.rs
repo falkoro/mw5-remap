@@ -54,6 +54,7 @@ pub(super) fn bind_tab(
     vjoy_map: &VjoyMap,
     bound: &HashMap<String, String>,
     groups: &[(String, Vec<usize>)],
+    live_muted: &mut std::collections::HashSet<(u16, u16)>,
 ) -> bool {
     panels::update_banner(ctx, status, update);
     let reload = toolbar::top_bar(ctx, games, selected, rows, actions, status, elevated, hidden, hide_state, show_export_dialog, profile, profile_input, show_community, community);
@@ -65,13 +66,13 @@ pub(super) fn bind_tab(
         *last_panel_rect = ui.max_rect();
         if let Some(tex) = textures.as_ref() {
             let filter = pending_export.as_ref();
-            crate::visual::sidebar(ui, tex, devices, games[*selected].as_ref(), show_labels, bound, vjoy_map, filter);
+            crate::visual::sidebar(ui, tex, devices, games[*selected].as_ref(), show_labels, bound, vjoy_map, live_muted, filter);
         } else {
             ui.label("Loading device images…");
         }
     });
 
-    panels::central(ctx, games, *selected, textures, devices, capture, rows, actions, status, vjoy_map, groups);
+    panels::central(ctx, games, *selected, textures, devices, capture, rows, actions, status, vjoy_map, groups, live_muted);
     panels::footers(ctx);
 
     // Export device-sheet flow: dialog -> (filtered repaint) -> screenshot -> crop + write.

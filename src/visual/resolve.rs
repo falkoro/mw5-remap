@@ -11,8 +11,51 @@
 
 use crate::games::GameProvider;
 use crate::input::Device;
-use crate::vjoy_map::{Source, VjoyMap};
+use crate::vjoy_map::{Source, Target, VjoyMap, VJOY_AXES};
 use std::collections::HashMap;
+
+/// Reverse of `vjoy_target_token`: which vJoy `Target` produces this MW5 token (if any).
+/// Searches the producible space (buttons 1..32 + the six routed axes) so it can never
+/// drift from the forward mapping — the single source of truth stays in `hotas.rs`.
+fn token_to_target(token: &str) -> Option<Target> {
+    for n in 1..=32u8 {
+        if crate::games::mw5::vjoy_target_token(&Target::Button(n)).as_deref() == Some(token) {
+            return Some(Target::Button(n));
+        }
+    }
+    for u in VJOY_AXES {
+        if crate::games::mw5::vjoy_target_token(&Target::Axis(u)).as_deref() == Some(token) {
+            return Some(Target::Axis(u));
+        }
+    }
+    None
+}
+
+/// Which physical joystick a bound token actually comes from, for a dim hint next to the
+/// chip in the binding grid. If the token is a vJoy-produced token AND the routing table
+/// maps something onto that vJoy Target, returns `"vJoy ← {source stick}"`. Otherwise
+/// falls back to the connected device whose ROLE matches the token (Joystick_*/Throttle_*),
+/// or None when nothing matches.
+pub fn token_device(token: &str, vjoy_map: &VjoyMap, devices: &[Device]) -> Option<String> {
+    if let Some(target) = token_to_target(token) {
+        if let Some(m) = vjoy_map.mappings.iter().find(|m| m.target == target) {
+            let name = devices.iter().find(|d| d.vid == m.vid && d.pid == m.pid)
+                .map(|d| d.name.clone())
+                .or_else(|| crate::devices::name_for(m.vid, m.pid).map(String::from))
+                .unwrap_or_else(|| format!("{:04X}:{:04X}", m.vid, m.pid));
+            return Some(format!("vJoy ← {name}"));
+        }
+    }
+    // No vJoy mapping: name the connected device whose registry role matches the token.
+    let role = if token.starts_with("Joystick") { crate::games::Role::Joystick }
+               else if token.starts_with("Throttle") { crate::games::Role::Throttle }
+               else { return None };
+    devices.iter().find_map(|d| {
+        crate::devices::registry().iter()
+            .find(|kd| kd.vid == d.vid && kd.pid == d.pid && kd.role == role)
+            .map(|_| d.name.clone())
+    })
+}
 
 /// The DIRECT MW5 token a physical control emits with no vJoy (the provider's contract).
 /// `src` is the physical button BIT (0-based) or axis index; `idx` the device's slot.

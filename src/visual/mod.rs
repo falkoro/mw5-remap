@@ -20,8 +20,9 @@ use crate::input::Device;
 use crate::vjoy_map::VjoyMap;
 use devices_markers::{BASE_MARKERS, MHG_HATS, MHG_MARKERS, MHG_MULTI, PEDAL_MARKERS, VKB_HATS, VKB_MARKERS};
 use draw::{draw_callouts, draw_hats, draw_multi_callouts};
+pub use resolve::token_device;
 use eframe::egui;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 const STICK_PNG: &[u8] = include_bytes!("../../assets/mhg_stick.png");
 const BASE_PNG: &[u8] = include_bytes!("../../assets/ab6_base.png");
@@ -100,7 +101,7 @@ fn disp_size(tex: &egui::TextureHandle, w: f32) -> egui::Vec2 {
 
 /// A MOZA axis is "engaged": centered axes (aim, rudder) when pushed off centre;
 /// the toe-throttle (rests at 0) when pressed in. Indices match games::mw5 .Remap.
-fn axis_deflected(devices: &[Device], token: &str) -> bool {
+fn axis_deflected(devices: &[Device], token: &str, muted: &HashSet<(u16, u16)>) -> bool {
     // The throttle (Throttle_Axis2) is driven by BOTH toe brakes — confirmed live on
     // this MRP: right toe = winmm X(0), left toe = winmm Y(1), BOTH UNIPOLAR resting
     // at ~0 (the 32767 seen on a cold first read is a winmm artifact; once polling
@@ -108,6 +109,7 @@ fn axis_deflected(devices: &[Device], token: &str) -> bool {
     if token == "Throttle_Axis2" {
         // The MRP toe brakes are unipolar, resting at 0 — confirmed live they are
         // Rx(3) / Ry(4) (NOT X/Y). Either toe pressed in = throttle engaged.
+        if muted.contains(&MRP) { return false; }
         return match devices.iter().find(|d| (d.vid, d.pid) == MRP) {
             Some(d) => {
                 d.axes.get(3).copied().unwrap_or(0) > 12000
@@ -138,7 +140,7 @@ fn axis_deflected(devices: &[Device], token: &str) -> bool {
         _ => {}
     }
     wired.iter().any(|&(id, idx)| {
-        devices.iter().find(|d| (d.vid, d.pid) == id).is_some_and(|d| {
+        !muted.contains(&id) && devices.iter().find(|d| (d.vid, d.pid) == id).is_some_and(|d| {
             ((d.axes.get(idx).copied().unwrap_or(32767) as i32) - 32767).abs() > 9000
         })
     })
@@ -157,9 +159,10 @@ fn vkb_octant(devices: &[Device]) -> Option<u32> {
 /// The live set of tokens currently active: pressed buttons, the POV octant, and
 /// deflected/pressed axes. Shared by the device panel AND the Cockpit Bindings
 /// list so a binding row lights up the instant you touch its control.
-pub fn hot_tokens(devices: &[Device], p: &dyn GameProvider, vjoy_map: &VjoyMap) -> Vec<String> {
+pub fn hot_tokens(devices: &[Device], p: &dyn GameProvider, vjoy_map: &VjoyMap, muted: &HashSet<(u16, u16)>) -> Vec<String> {
     let mut hot: Vec<String> = Vec::new();
     for (i, d) in devices.iter().enumerate() {
+        if muted.contains(&(d.vid, d.pid)) { continue; } // soft-muted from the LIVE display
         for b in d.pressed_buttons() {
             if let Some(t) = p.button_token(d, b, i) { hot.push(t); }
         }
@@ -168,7 +171,7 @@ pub fn hot_tokens(devices: &[Device], p: &dyn GameProvider, vjoy_map: &VjoyMap) 
         }
     }
     for tok in ["Joystick_Axis1", "Joystick_Axis2", "Joystick_Axis4", "Joystick_Axis5", "Joystick_Axis6", "Throttle_Axis1", "Throttle_Axis2"] {
-        if axis_deflected(devices, tok) { hot.push(tok.to_string()); }
+        if axis_deflected(devices, tok, muted) { hot.push(tok.to_string()); }
     }
     // While the vJoy feeder is active a physical control's input reaches MW5 as its vJoy
     // Target's token, so route every live DIRECT token through the resolver — a marker /
@@ -253,6 +256,7 @@ pub fn sidebar(
     show_labels: &mut bool,
     bound: &HashMap<String, String>,
     vjoy_map: &VjoyMap,
+    muted: &HashSet<(u16, u16)>,
     filter: Option<&crate::app::ExportOpts>,
 ) {
     // During an export capture, `filter` selects which devices to render so the
@@ -262,7 +266,7 @@ pub fn sidebar(
         None => (true, true, true),
     };
     // Build the live "hot" token set: pressed buttons, POV octant, deflected axes.
-    let hot = hot_tokens(devices, p, vjoy_map);
+    let hot = hot_tokens(devices, p, vjoy_map, muted);
     // vJoy-aware DIRECT-token -> RESOLVED-token map: while feeding, a marker's hardcoded
     // direct token is two hops from MW5, so resolve it to what the game really receives.
     // EMPTY when vJoy is off => callouts behave exactly as before.

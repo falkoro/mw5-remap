@@ -4,6 +4,7 @@
 
 use crate::games::{Action, Binding, GameProvider, Kind};
 use crate::input;
+use crate::vjoy_map::VjoyMap;
 use eframe::egui;
 use std::collections::{HashMap, HashSet};
 
@@ -65,6 +66,29 @@ pub(super) fn pretty_token(token: &str) -> String {
     }
 }
 
+/// A row of "Live: [chip] [chip] …" device toggles: click a stick's chip to soft-mute it
+/// from the LIVE display (green glow + Detected readout) so you can test one stick at a
+/// time. Muted chips render dimmed + struck-through. UI-only — never touches HidHide.
+pub(super) fn mute_chips(ui: &mut egui::Ui, devices: &[input::Device], muted: &mut HashSet<(u16, u16)>) {
+    if devices.is_empty() { return; }
+    ui.horizontal_wrapped(|ui| {
+        ui.label(egui::RichText::new("Live:").color(TEXT_MAIN))
+            .on_hover_text("Mute a stick from this app's live glow + Detected readout (display only).");
+        for d in devices {
+            let id = (d.vid, d.pid);
+            let is_muted = muted.contains(&id);
+            let mut rt = egui::RichText::new(&d.name).size(12.0);
+            rt = if is_muted { rt.strikethrough().color(UNBOUND_COL) } else { rt.color(TEXT_MAIN) };
+            if ui.selectable_label(!is_muted, rt)
+                .on_hover_text("Click to mute/unmute this stick in the live display.")
+                .clicked()
+            {
+                if is_muted { muted.remove(&id); } else { muted.insert(id); }
+            }
+        }
+    });
+}
+
 /// One row of the Cockpit Bindings grid: action label, a colour-coded "chip"
 /// showing the bound control (click it to re-bind), a clear button, and (for axes)
 /// invert/scale. The chip turns green the instant its control is physically active.
@@ -79,6 +103,7 @@ pub(super) fn binding_row(
     p: &dyn GameProvider,
     status: &mut String,
     hot: &[String],
+    vjoy_map: &VjoyMap,
 ) {
     let capturing = capture.as_ref().map(|c| c.row == i).unwrap_or(false);
     let token = rows[i].token.clone();
@@ -108,7 +133,18 @@ pub(super) fn binding_row(
         .stroke(stroke)
         .rounding(egui::Rounding::same(8.0))
         .min_size(egui::vec2(158.0, 30.0));
-    if ui.add(chip).on_hover_text("Click, then press the control / move the axis. Esc cancels.").clicked() {
+    // chip + a dim "which joystick" hint share one grid cell (keeps the 4-column layout).
+    let clicked = ui.horizontal(|ui| {
+        let resp = ui.add(chip).on_hover_text("Click, then press the control / move the axis. Esc cancels.");
+        if !token.is_empty() && !capturing {
+            if let Some(dev) = crate::visual::token_device(&token, vjoy_map, devices) {
+                ui.label(egui::RichText::new(format!("· {dev}")).size(10.5).color(egui::Color32::from_rgb(120, 128, 145)))
+                    .on_hover_text("Which physical joystick feeds this binding.");
+            }
+        }
+        resp.clicked()
+    }).inner;
+    if clicked {
         if capturing {
             *capture = None;
         } else {
@@ -157,8 +193,9 @@ const HAT_ARROWS: [&str; 8] = ["↑", "↗", "→", "↘", "↓", "↙", "←", 
 /// every frame and idle/noisy physical axes jitter, so any most-moved-axis test
 /// false-positives constantly. Device-agnostic (no game token). Returns the body
 /// that follows "Detected: " (e.g. `MOZA AB6 — Button 5`), or None when idle.
-pub(super) fn detect_input(devices: &[input::Device]) -> Option<String> {
+pub(super) fn detect_input(devices: &[input::Device], muted: &HashSet<(u16, u16)>) -> Option<String> {
     for d in devices {
+        if muted.contains(&(d.vid, d.pid)) { continue; } // soft-muted from the LIVE display
         if let Some(&b) = d.pressed_buttons().first() {
             return Some(format!("{} — Button {}", d.name, b));
         }

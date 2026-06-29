@@ -25,7 +25,7 @@ use crate::games::{self, Action, Binding, GameProvider, Kind};
 use crate::vjoy_map::VjoyMap;
 use crate::{hidhide, input, sys};
 use eframe::egui;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -66,6 +66,8 @@ pub struct App {
     community: Arc<Mutex<crate::community::CommunityState>>, // async listing fetch result
     community_dl: Arc<Mutex<crate::community::DownloadState>>, // async profile download result
     notif_log: Vec<String>, // history of status changes for the top-right notification feed (newest last)
+    notif_collapsed: bool, // when true the feed shows only a small 🔔 badge (history preserved)
+    live_muted: HashSet<(u16, u16)>, // devices soft-muted from the LIVE display (glow + Detected); UI-only, no HidHide
 }
 
 impl App {
@@ -120,6 +122,8 @@ impl App {
             community: Arc::new(Mutex::new(crate::community::CommunityState::Idle)),
             community_dl: Arc::new(Mutex::new(crate::community::DownloadState::Idle)),
             notif_log: Vec::new(),
+            notif_collapsed: false,
+            live_muted: HashSet::new(),
         };
         app.load_selected();
         app.crash_recover();
@@ -222,7 +226,7 @@ impl eframe::App for App {
             }
         }
 
-        let App { games, selected, tab, actions, rows, devices, capture, status, elevated, hidden, hide_state, textures, show_labels, update, show_export_dialog, export_opts, pending_export, export_shot_sent, last_panel_rect, profile, profile_input, vjoy_map, vjoy_sel, vjoy_capture, vjoy_btn_pick, vjoy_axis_pick, vjoy_pair_fwd, vjoy_pair_rev, vjoy_paused, show_community, community, community_dl, notif_log } = self;
+        let App { games, selected, tab, actions, rows, devices, capture, status, elevated, hidden, hide_state, textures, show_labels, update, show_export_dialog, export_opts, pending_export, export_shot_sent, last_panel_rect, profile, profile_input, vjoy_map, vjoy_sel, vjoy_capture, vjoy_btn_pick, vjoy_axis_pick, vjoy_pair_fwd, vjoy_pair_rev, vjoy_paused, show_community, community, community_dl, notif_log, notif_collapsed, live_muted } = self;
 
         // Capture every status change into the notification feed history (newest last,
         // capped). The top-right feed below renders this so old notifications stay visible.
@@ -248,7 +252,7 @@ impl eframe::App for App {
 
         // Live "Detected:" readout — which stick + control is actuated this frame.
         // Shown under the tab bar (below), so it's visible in BOTH tabs at once.
-        let detected = widgets::detect_input(devices);
+        let detected = widgets::detect_input(devices, live_muted);
 
         // Top-level tab selector — ABOVE everything else. Bind = the editor; vJoy
         // Setup = the routing UI. The feed loop above runs regardless of tab.
@@ -273,7 +277,7 @@ impl eframe::App for App {
                 ctx, games, selected, actions, rows, devices, capture, status, *elevated, hidden,
                 hide_state, textures, show_labels, update, show_export_dialog, export_opts,
                 pending_export, export_shot_sent, last_panel_rect, profile, profile_input,
-                show_community, community, community_dl, vjoy_map, &bound, &groups,
+                show_community, community, community_dl, vjoy_map, &bound, &groups, live_muted,
             ),
             Tab::VjoySetup => {
                 tabs::vjoy_setup_tab(
@@ -286,7 +290,7 @@ impl eframe::App for App {
 
         // Top-right notification feed (history) — drawn last so it floats over both
         // tabs; offset down when the update banner is also occupying the top-right.
-        panels::notif_feed(ctx, notif_log, update.lock().unwrap().is_some());
+        panels::notif_feed(ctx, notif_log, notif_collapsed, update.lock().unwrap().is_some());
 
         if reload { self.load_selected(); }
         ctx.request_repaint_after(Duration::from_millis(30));

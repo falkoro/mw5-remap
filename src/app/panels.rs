@@ -4,7 +4,8 @@
 //! keep each file under the size budget — every helper takes only the app state
 //! it touches.
 
-use super::widgets::{binding_row, Capture, TEXT_MAIN};
+use super::widgets::{binding_row, mute_chips, Capture, TEXT_MAIN};
+use std::collections::HashSet;
 use crate::games::{Action, Binding, GameProvider};
 use crate::input;
 use eframe::egui;
@@ -71,12 +72,31 @@ pub(super) fn footers(ctx: &egui::Context) {
 /// The TOP-RIGHT notification feed: a vertical stack of recent status messages with
 /// history, NEWEST AT TOP. The newest is a bright dark-card with the green LIVE accent;
 /// older entries fade (dimmer text) and shrink slightly. Shows the last ~6 entries.
-/// When the update banner occupies the top-right (`shifted`), the feed starts lower so
-/// the two don't collide. Floats over both tabs.
-pub(super) fn notif_feed(ctx: &egui::Context, log: &[String], shifted: bool) {
+/// Each card carries a `✕` that REMOVES that entry from `log`; the newest also carries a
+/// `–` that collapses the whole feed to a small `🔔 {n}` badge (history is preserved —
+/// clicking the badge expands again). When the update banner occupies the top-right
+/// (`shifted`), the feed starts lower so the two don't collide. Floats over both tabs.
+pub(super) fn notif_feed(ctx: &egui::Context, log: &mut Vec<String>, collapsed: &mut bool, shifted: bool) {
     if log.is_empty() { return; }
     let accent = super::widgets::LIVE;
     let top = if shifted { 102.0 } else { 12.0 };
+
+    // Collapsed: render ONLY a small clickable bell badge with the history count.
+    if *collapsed {
+        egui::Area::new(egui::Id::new("notif_feed"))
+            .order(egui::Order::Foreground)
+            .anchor(egui::Align2::RIGHT_TOP, egui::vec2(-12.0, top))
+            .show(ctx, |ui| {
+                let badge = egui::Button::new(egui::RichText::new(format!("🔔 {}", log.len())).strong().color(accent))
+                    .fill(egui::Color32::from_rgb(30, 34, 46))
+                    .stroke(egui::Stroke::new(1.0, accent))
+                    .rounding(egui::Rounding::same(8.0));
+                if ui.add(badge).on_hover_text("Show notifications").clicked() { *collapsed = false; }
+            });
+        return;
+    }
+
+    let mut dismiss: Option<usize> = None;
     egui::Area::new(egui::Id::new("notif_feed"))
         .order(egui::Order::Foreground)
         .anchor(egui::Align2::RIGHT_TOP, egui::vec2(-12.0, top))
@@ -103,12 +123,24 @@ pub(super) fn notif_feed(ctx: &egui::Context, log: &[String], shifted: bool) {
                     .inner_margin(egui::Margin::symmetric(12.0, depth.min(1) as f32 * -1.0 + 7.0))
                     .show(ui, |ui| {
                         ui.set_max_width(300.0);
-                        let rt = egui::RichText::new(msg.as_str()).size(size).color(txt_col);
-                        ui.label(if depth == 0 { rt.strong() } else { rt });
+                        ui.horizontal(|ui| {
+                            let rt = egui::RichText::new(msg.as_str()).size(size).color(txt_col);
+                            ui.label(if depth == 0 { rt.strong() } else { rt });
+                            // dismiss (and, on the newest card, collapse) pinned to the right.
+                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                if ui.small_button("✕").on_hover_text("Dismiss this notification").clicked() {
+                                    dismiss = Some(log.len() - 1 - depth);
+                                }
+                                if depth == 0 && ui.small_button("–").on_hover_text("Collapse the feed").clicked() {
+                                    *collapsed = true;
+                                }
+                            });
+                        });
                     });
                 ui.add_space(4.0);
             }
         });
+    if let Some(i) = dismiss { if i < log.len() { log.remove(i); } }
 }
 
 /// The central "Cockpit Bindings" panel: header + legend, then the categories
@@ -127,6 +159,7 @@ pub(super) fn central(
     status: &mut String,
     vjoy_map: &crate::vjoy_map::VjoyMap,
     groups: &[(String, Vec<usize>)],
+    live_muted: &mut HashSet<(u16, u16)>,
 ) {
     egui::CentralPanel::default().show(ctx, |ui| {
         if !games[selected].available() {
@@ -135,7 +168,8 @@ pub(super) fn central(
         }
         let p = games[selected].as_ref();
         // Live set of tokens being pressed/moved right now — drives the green glow.
-        let hot = crate::visual::hot_tokens(devices, p, vjoy_map);
+        // Muted devices are skipped so you can test one stick at a time.
+        let hot = crate::visual::hot_tokens(devices, p, vjoy_map, live_muted);
 
         ui.add_space(2.0);
         ui.horizontal(|ui| {
@@ -149,6 +183,8 @@ pub(super) fn central(
         });
         // Device colour legend (which colour = which physical device).
         legend(ui);
+        // Per-stick LIVE mute toggles (display-only): test one stick without the rest glowing.
+        mute_chips(ui, devices, live_muted);
         ui.separator();
 
         // Spread the categories across N balanced columns (by row count) so the
@@ -183,7 +219,7 @@ pub(super) fn central(
                         col.strong(cat);
                         egui::Grid::new(format!("grid_{cat}")).num_columns(4).spacing([8.0, 3.0]).striped(true).show(col, |ui| {
                             for &i in idxs.iter() {
-                                binding_row(ui, i, actions, rows, capture, devices, p, status, &hot);
+                                binding_row(ui, i, actions, rows, capture, devices, p, status, &hot, vjoy_map);
                             }
                         });
                     }

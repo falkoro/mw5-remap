@@ -1074,7 +1074,7 @@ dependencies = [
 
 [[package]]
 name = "mw5-remap"
-version = "0.5.7"
+version = "0.5.8"
 dependencies = [
  "eframe",
  "image",
