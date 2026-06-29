@@ -165,21 +165,21 @@ fn vjoy_block() -> String {
         let tok = vjoy_target_token(&Target::Button(n)).expect("vjoy button 1..32 maps to a token");
         s.push_str(&format!("BUTTON: InButton=GenericUSBController_Button{n}, OutButtons={tok}\r\n"));
     }
-    // vJoy POV hat -> Joystick_Hat_1..8 (8 directions). Lets a physical coolie hat
-    // routed onto the vJoy POV reach MW5 as a hat, with the physical device hidden.
-    for n in 1..=8u8 {
-        s.push_str(&format!("BUTTON: InButton=GenericUSBController_Hat{n}, OutButtons=Joystick_Hat_{n}\r\n"));
-    }
+    // NO hat lines + only 32 buttons => 32 .Remap entries, kept UNDER MW5's ~35-input
+    // limit (evilC/MW5HOTAS issue #3: beyond ~35 the inputs misbehave / collapse, which is
+    // what made everything read as "Joystick Button 1"). The look hat is covered by the
+    // MOZA gimbal on the look axes instead.
     let dz = "Invert=FALSE, Offset=-0.5, DeadZoneMin=-0.05, DeadZoneMax=0.05, MapToDeadZone=TRUE";
-    // (vJoy HID input name -> vJoy axis usage). MW5 can't address Rx/Ry by name, so those two
-    // enter as the raw GenericUSBController_Axis4/5; the OutAxis token is vjoy_target_token's.
+    // Per the evilC/MW5HOTAS guide, EVERY vJoy axis enters by its raw HID index
+    // (GenericUSBController_AxisN), NOT HOTAS_*Axis: vJoy X=Axis1, Y=2, Z=3, Rx=4, Ry=5, Rz=6.
+    // The OutAxis token is vjoy_target_token's (the single source of truth).
     let axes = [
-        ("HOTAS_XAxis", crate::vjoy::HID_X),
-        ("HOTAS_YAxis", crate::vjoy::HID_Y),
+        ("GenericUSBController_Axis1", crate::vjoy::HID_X),
+        ("GenericUSBController_Axis2", crate::vjoy::HID_Y),
+        ("GenericUSBController_Axis3", crate::vjoy::HID_Z),
         ("GenericUSBController_Axis4", crate::vjoy::HID_RX),
         ("GenericUSBController_Axis5", crate::vjoy::HID_RY),
-        ("HOTAS_ZAxis", crate::vjoy::HID_Z),
-        ("HOTAS_RZAxis", crate::vjoy::HID_RZ),
+        ("GenericUSBController_Axis6", crate::vjoy::HID_RZ),
     ];
     for (inaxis, usage) in axes {
         let tok = vjoy_target_token(&Target::Axis(usage)).expect("vjoy axis maps to a token");
