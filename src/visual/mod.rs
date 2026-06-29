@@ -13,13 +13,13 @@
 mod devices_markers;
 mod draw;
 mod layout;
+mod order;
 mod panel;
 mod resolve;
 
 use crate::games::GameProvider;
 use crate::input::Device;
 use crate::vjoy_map::VjoyMap;
-use devices_markers::{BASE_MARKERS, MHG_HATS, MHG_MARKERS, MHG_MULTI, PEDAL_MARKERS, VKB_HATS, VKB_MARKERS};
 use draw::{draw_callouts, draw_hats, draw_multi_callouts};
 pub use resolve::token_device;
 use eframe::egui;
@@ -183,15 +183,18 @@ pub fn hot_tokens(devices: &[Device], p: &dyn GameProvider, vjoy_map: &VjoyMap, 
     hot.into_iter().map(|t| remap.get(&t).cloned().unwrap_or(t)).collect()
 }
 
-/// Draw a captioned image at width `w` with optional callouts laid over it.
+/// Draw a captioned image at width `w` with optional callouts laid over it. An empty
+/// `caption` draws no header (the live sidebar draws its own header with reorder buttons).
 #[allow(clippy::too_many_arguments)]
-fn image_block(
+pub(super) fn image_block(
     ui: &mut egui::Ui, caption: &str, tex: &egui::TextureHandle, w: f32,
     markers: &[Marker], multi: &[MultiMarker], hats: &[(f32, f32, u8)], hot: &[String], octant: Option<u32>, show: bool,
     bound: &HashMap<String, String>, remap: &HashMap<String, String>, device_key: &str, edit: bool,
 ) {
-    ui.add_space(8.0);
-    ui.strong(caption);
+    if !caption.is_empty() {
+        ui.add_space(8.0);
+        ui.strong(caption);
+    }
     let size = disp_size(tex, w);
     let (rect, _) = ui.allocate_exact_size(size, egui::Sense::hover());
     let painter = ui.painter_at(rect);
@@ -279,42 +282,11 @@ pub fn sidebar(
     let markers_visible = *show_labels || edit;
     let oct = ab6_octant(devices);
     let vkb_oct = vkb_octant(devices);
-    egui::ScrollArea::vertical().show(ui, |ui| {
-        let iw = ui.available_width();
-        ui.set_max_width(iw); // bound the inner ui so ui.columns splits correctly
-        // Raw-axis readout now sits WITH the diagrams (collapsible, collapsed by default)
-        // and scrolls alongside them, instead of being pinned above the panel.
-        if live {
-            egui::CollapsingHeader::new(egui::RichText::new("Live axes").strong())
-                .default_open(false)
-                .show(ui, |ui| panel::live_axes(ui, devices, p, muted))
-                .header_response
-                .on_hover_text("Raw value of every axis on every device in view — find your axis while testing.");
-            ui.add_space(6.0);
-        }
-        // Main flight stick: full-width and prominent (it carries the most controls).
-        if want_stick && !(live && muted.contains(&AB6)) {
-            image_block(ui, "MHG Flight Stick", &tex.stick, iw, MHG_MARKERS, MHG_MULTI, MHG_HATS, &hot, oct, markers_visible, bound, &remap, "stick", edit);
-            ui.add_space(6.0);
-        }
-        // Secondary devices in a 2-up grid (base, pedals, …). Each takes half the width.
-        let show_base = want_base && !(live && muted.contains(&AB6));
-        let show_pedals = want_pedals && !(live && muted.contains(&MRP));
-        if show_base || show_pedals {
-            ui.columns(2, |cols| {
-                let cw = (iw - 12.0) / 2.0;
-                if show_base {
-                    image_block(&mut cols[0], "AB6 Base", &tex.base, cw, BASE_MARKERS, &[], &[], &hot, None, markers_visible, bound, &remap, "base", edit);
-                }
-                if show_pedals {
-                    image_block(&mut cols[1], "MRP Pedals", &tex.pedals, cw, PEDAL_MARKERS, &[], &[], &hot, None, markers_visible, bound, &remap, "pedals", edit);
-                }
-            });
-        }
-        // VKB Gladiator EVO: full-width, live panel only (export targets the MOZA sheet).
-        if live && !muted.contains(&VKB) {
-            ui.add_space(6.0);
-            image_block(ui, "VKB Gladiator EVO", &tex.vkb, iw, VKB_MARKERS, &[], VKB_HATS, &hot, vkb_oct, markers_visible, bound, &remap, "vkb", edit);
-        }
-    });
+    // The scrolling body (reorderable device images live; the export sheet when capturing,
+    // then the collapsible "Live axes" readout BELOW the pictures) lives in `panel` to keep
+    // this orchestrator small.
+    panel::device_scroll(
+        ui, tex, devices, p, &hot, bound, &remap, oct, vkb_oct, markers_visible, edit, live, muted,
+        (want_stick, want_base, want_pedals),
+    );
 }

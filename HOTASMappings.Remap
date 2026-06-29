@@ -1,0 +1,53 @@
+START_BIND
+NAME: Virpil VPC WarBRD Constellation Alpha Prime - Left
+VID: 0x3344
+PID: 0x80d3
+BUTTON: InButton=GenericUSBController_Button1, OutButtons=Throttle_Button1
+BUTTON: InButton=GenericUSBController_Button2, OutButtons=Throttle_Button2
+BUTTON: InButton=GenericUSBController_Button3, OutButtons=Throttle_Button3
+BUTTON: InButton=GenericUSBController_Button4, OutButtons=Throttle_Button4
+BUTTON: InButton=GenericUSBController_Button5, OutButtons=Throttle_Button5
+BUTTON: InButton=GenericUSBController_Button6, OutButtons=Throttle_Button6
+BUTTON: InButton=GenericUSBController_Button7, OutButtons=Throttle_Button7
+BUTTON: InButton=GenericUSBController_Button8, OutButtons=Throttle_Button8
+BUTTON: InButton=GenericUSBController_Button9, OutButtons=Throttle_Button9
+BUTTON: InButton=GenericUSBController_Button10, OutButtons=Throttle_Button10
+BUTTON: InButton=GenericUSBController_Button11, OutButtons=Throttle_Button11
+BUTTON: InButton=GenericUSBController_Button12, OutButtons=Throttle_Button12
+BUTTON: InButton=GenericUSBController_Button13, OutButtons=Throttle_Button13
+BUTTON: InButton=GenericUSBController_Button14, OutButtons=Throttle_Button14
+BUTTON: InButton=GenericUSBController_Button15, OutButtons=Throttle_Button15
+BUTTON: InButton=GenericUSBController_Button16, OutButtons=Throttle_Button16
+BUTTON: InButton=GenericUSBController_Button17, OutButtons=Throttle_Button17
+BUTTON: InButton=GenericUSBController_Button18, OutButtons=Throttle_Button18
+BUTTON: InButton=GenericUSBController_Button19, OutButtons=Throttle_Button19
+BUTTON: InButton=GenericUSBController_Button20, OutButtons=Throttle_Button20
+BUTTON: InButton=GenericUSBController_Button21, OutButtons=Joystick_Button1
+BUTTON: InButton=GenericUSBController_Button22, OutButtons=Joystick_Button2
+BUTTON: InButton=GenericUSBController_Button23, OutButtons=Joystick_Button3
+BUTTON: InButton=GenericUSBController_Button24, OutButtons=Joystick_Button4
+BUTTON: InButton=GenericUSBController_Button25, OutButtons=Joystick_Button5
+BUTTON: InButton=GenericUSBController_Button26, OutButtons=Joystick_Button6
+BUTTON: InButton=GenericUSBController_Button27, OutButtons=Joystick_Button7
+BUTTON: InButton=GenericUSBController_Button28, OutButtons=Joystick_Button8
+BUTTON: InButton=GenericUSBController_Button29, OutButtons=Joystick_Button9
+BUTTON: InButton=GenericUSBController_Button30, OutButtons=Joystick_Button10
+BUTTON: InButton=GenericUSBController_Button31, OutButtons=Joystick_Button11
+BUTTON: InButton=GenericUSBController_Button32, OutButtons=Joystick_Button12
+AXIS: InAxis=HOTAS_XAxis, OutAxis=Joystick_Axis2, Invert=FALSE, Offset=-0.5, DeadZoneMin=-0.2,
+DeadZoneMax=0.2, MapToDeadZone=TRUE
+AXIS: InAxis=HOTAS_YAxis, OutAxis=Throttle_Axis1, Invert=FALSE, Offset=-0.5, DeadZoneMin=-0.2,
+DeadZoneMax=0.2, MapToDeadZone=TRUE
+AXIS: InAxis=HOTAS_ZAxis, OutAxis=Joystick_Axis3, Invert=FALSE, Offset=-0.5, DeadZoneMin=-0.15,
+DeadZoneMax=0.15, MapToDeadZone=TRUE
+AXIS: InAxis=GenericUSBController_Axis3, OutAxis=Joystick_Axis4, Invert=FALSE, Offset=-0.5, DeadZoneMin=-0.15,
+DeadZoneMax=0.15, MapToDeadZone=TRUE
+AXIS: InAxis=GenericUSBController_Axis4, OutAxis=Joystick_Axis5, Invert=TRUE, Offset=-0.5, DeadZoneMin=-0.15,
+DeadZoneMax=0.15, MapToDeadZone=TRUE
+
+START_BIND
+NAME: Virpil VPC ACE-Torq Rudder
+VID: 0x3344
+PID: 0x01F9
+AXIS: InAxis=HOTAS_ZAxis, OutAxis=Throttle_Axis2, Invert=FALSE, Offset=-0.5, DeadZoneMin=-0.15,
+DeadZoneMax=0.15, MapToDeadZone=TRUE

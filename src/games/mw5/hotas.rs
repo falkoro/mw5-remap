@@ -150,40 +150,41 @@ fn mrp_pedal_block() -> String {
 }
 
 /// vJoy device — the SINGLE clean device the whole MOZA rig is mirrored onto (evilC
-/// approach), so MW5 reads tidy 20 buttons / 6 centred axes instead of the AB6's 128
-/// buttons (which it collapses to "Button 1"). Buttons 1..20 = AB6 stick buttons;
-/// X/Y = gimbal aim, Rx/Ry = thumb-hat look, Z = combined throttle, Rz = rudder. All
-/// axes are CENTRED by the feeder, so Offset=-0.5. Maps to BOTH Joystick+Throttle roles.
+/// approach), so MW5 reads ONE tidy stick instead of the AB6's 128 buttons (which it
+/// collapses to "Button 1"). EXACT structure of evilC/MW5HOTAS `Base.txt`:
+///   - header `NAME: vJoy Stick`, VID 0x1234, PID 0xBEAD;
+///   - 40 buttons: 1..20 -> `Joystick_Button1..20`, 21..40 -> `Throttle_Button1..20`;
+///   - 8 hats: `GenericUSBController_HatN` -> `Joystick_Hat_N`;
+///   - 6 axes by raw HID index (vJoy X=Axis1 .. Rz=Axis6) -> the role token, params
+///     `Invert=FALSE, Offset=-0.5, DeadZoneMin=0.0, DeadZoneMax=0.0, MapToDeadZone=FALSE`.
+/// The emitted tokens mirror `vjoy_target_token` (the resolver's single source of truth)
+/// so the .Remap file and the on-screen device diagram can never drift apart.
 fn vjoy_block() -> String {
-    use crate::vjoy_map::Target;
-    let mut s = String::from("START_BIND\r\nNAME: vJoy Device\r\nVID: 0x1234\r\nPID: 0xBEAD\r\n");
-    // vJoy buttons 1..20 -> Joystick_Button*, 21..32 -> Throttle_Button1..12 (evilC scheme)
-    // so EVERY physical button reaches MW5 even above DI bit 19. The OutButtons token comes
-    // from vjoy_target_token (the single source of truth) so the .Remap and the device-
-    // diagram resolver can never drift apart.
-    for n in 1..=32u8 {
-        let tok = vjoy_target_token(&Target::Button(n)).expect("vjoy button 1..32 maps to a token");
+    let mut s = String::from("START_BIND\r\nNAME: vJoy Stick\r\nVID: 0x1234\r\nPID: 0xBEAD\r\n");
+    // 40 buttons: 1..20 -> Joystick_Button{n}, 21..40 -> Throttle_Button{n-20}, so EVERY
+    // physical button reaches MW5 even above DI bit 19.
+    for n in 1..=40u8 {
+        let tok = if n <= 20 { format!("Joystick_Button{n}") } else { format!("Throttle_Button{}", n - 20) };
         s.push_str(&format!("BUTTON: InButton=GenericUSBController_Button{n}, OutButtons={tok}\r\n"));
     }
-    // NO hat lines + only 32 buttons => 32 .Remap entries, kept UNDER MW5's ~35-input
-    // limit (evilC/MW5HOTAS issue #3: beyond ~35 the inputs misbehave / collapse, which is
-    // what made everything read as "Joystick Button 1"). The look hat is covered by the
-    // MOZA gimbal on the look axes instead.
-    let dz = "Invert=FALSE, Offset=-0.5, DeadZoneMin=-0.05, DeadZoneMax=0.05, MapToDeadZone=TRUE";
-    // Per the evilC/MW5HOTAS guide, EVERY vJoy axis enters by its raw HID index
-    // (GenericUSBController_AxisN), NOT HOTAS_*Axis: vJoy X=Axis1, Y=2, Z=3, Rx=4, Ry=5, Rz=6.
-    // The OutAxis token is vjoy_target_token's (the single source of truth).
+    // 8 POV-hat directions -> Joystick_Hat_1..8 (the vJoy POV, fed from a physical hat).
+    for n in 1..=8u8 {
+        s.push_str(&format!("BUTTON: InButton=GenericUSBController_Hat{n}, OutButtons=Joystick_Hat_{n}\r\n"));
+    }
+    // 6 axes enter by raw HID index (GenericUSBController_AxisN), NOT HOTAS_*Axis:
+    // vJoy X=Axis1, Y=2, Z=3, Rx=4, Ry=5, Rz=6 -> the same tokens vjoy_target_token gives.
     let axes = [
-        ("GenericUSBController_Axis1", crate::vjoy::HID_X),
-        ("GenericUSBController_Axis2", crate::vjoy::HID_Y),
-        ("GenericUSBController_Axis3", crate::vjoy::HID_Z),
-        ("GenericUSBController_Axis4", crate::vjoy::HID_RX),
-        ("GenericUSBController_Axis5", crate::vjoy::HID_RY),
-        ("GenericUSBController_Axis6", crate::vjoy::HID_RZ),
+        ("GenericUSBController_Axis1", "Joystick_Axis1"),
+        ("GenericUSBController_Axis2", "Joystick_Axis2"),
+        ("GenericUSBController_Axis3", "Throttle_Axis2"),
+        ("GenericUSBController_Axis4", "Joystick_Axis4"),
+        ("GenericUSBController_Axis5", "Joystick_Axis5"),
+        ("GenericUSBController_Axis6", "Throttle_Axis1"),
     ];
-    for (inaxis, usage) in axes {
-        let tok = vjoy_target_token(&Target::Axis(usage)).expect("vjoy axis maps to a token");
-        s.push_str(&format!("AXIS: InAxis={inaxis}, OutAxis={tok}, {dz}\r\n"));
+    for (inaxis, tok) in axes {
+        s.push_str(&format!(
+            "AXIS: InAxis={inaxis}, OutAxis={tok}, Invert=FALSE, Offset=-0.5, DeadZoneMin=0.0, DeadZoneMax=0.0, MapToDeadZone=FALSE\r\n"
+        ));
     }
     s
 }
@@ -191,13 +192,13 @@ fn vjoy_block() -> String {
 /// SINGLE SOURCE OF TRUTH for "vJoy Target -> MW5 token". `vjoy_block()` EMITS exactly
 /// these tokens, and the device-diagram resolver READS them back, so the .Remap file and
 /// the on-screen labels can never drift. Mirrors the evilC scheme: vJoy buttons 1..20 ->
-/// Joystick_Button1..20, 21..32 -> Throttle_Button1..12; vJoy axes X/Y/Rx/Ry/Z/Rz ->
+/// Joystick_Button1..20, 21..40 -> Throttle_Button1..20; vJoy axes X/Y/Rx/Ry/Z/Rz ->
 /// Joystick_Axis1/2/4/5 + Throttle_Axis2/Axis1. `None` for a Target outside that range.
 pub fn vjoy_target_token(t: &crate::vjoy_map::Target) -> Option<String> {
     use crate::vjoy_map::Target;
     match *t {
         Target::Button(n) if (1..=20).contains(&n) => Some(format!("Joystick_Button{n}")),
-        Target::Button(n) if (21..=32).contains(&n) => Some(format!("Throttle_Button{}", n - 20)),
+        Target::Button(n) if (21..=40).contains(&n) => Some(format!("Throttle_Button{}", n - 20)),
         Target::Button(_) => None,
         // The vJoy POV's 8 directions are emitted directly as Joystick_Hat_1..8 by
         // vjoy_block(); there is no single token for the whole hat.
@@ -284,6 +285,53 @@ fn append_block(out: &mut String, blk: &str) {
     out.push_str(blk);
 }
 
+/// An EMPTY START_BIND block (header + ONE blank line, NO BUTTON/AXIS lines) for a
+/// physical device. evilC/MW5HOTAS writes one per real stick BEFORE the vJoy block: it
+/// makes MW5 IGNORE the raw stick (whose 128 buttons otherwise ALL collapse to "Joystick
+/// Button 1") so it reads ONLY vJoy. THE fix for the "everything is Button 1" bug.
+fn empty_device_block(d: &crate::devices::KnownDevice) -> String {
+    format!("START_BIND\r\nNAME: {}\r\nVID: 0x{:04X}\r\nPID: 0x{:04X}\r\n\r\n", d.name, d.vid, d.pid)
+}
+
+/// Pure assembly of the HOTASMappings.Remap body, split out from `write_hotas_mappings`
+/// so the block layout is unit-testable without hardware or file IO.
+///
+/// Order: (1) keep the user's CONNECTED but unmanaged device blocks from `existing`;
+/// (2) when feeding vJoy, an EMPTY block for EVERY known physical device (so MW5 ignores
+/// the raw sticks — evilC's "Button 1" fix); (3) our managed device blocks — vJoy ONLY
+/// when feeding, the physical devices ONLY when not feeding.
+fn assemble_blocks(existing: &str, connected: &[(u16, u16)], vjoy_active: bool) -> String {
+    let registry_ids: Vec<(u16, u16)> = crate::devices::registry().iter().map(|d| (d.vid, d.pid)).collect();
+    // Keep existing blocks only for connected devices we DON'T manage (preserve a user's
+    // unknown stick), drop everything absent/stale; if nothing is detected, don't wipe the
+    // file — just manage our blocks in place.
+    let mut out = if connected.is_empty() {
+        strip_device_blocks(existing, &registry_ids).trim_end().to_string()
+    } else {
+        retain_blocks(existing, |vid, pid| {
+            connected.contains(&(vid, pid)) && !registry_ids.contains(&(vid, pid))
+        }).trim_end().to_string()
+    };
+    let vjoy_id = (0x1234u16, 0xBEADu16);
+    // evilC fix: an EMPTY block per known PHYSICAL device BEFORE the vJoy block.
+    if vjoy_active {
+        for d in crate::devices::registry().iter().filter(|d| !d.custom && (d.vid, d.pid) != vjoy_id) {
+            append_block(&mut out, &empty_device_block(d));
+        }
+    }
+    // A device is emitted as a FULL block iff (it is vJoy) == (vJoy is active): vJoy-only
+    // when feeding (else physical sticks fight vJoy for MW5's slots / re-collapse buttons),
+    // physical-only otherwise (a vJoy install never breaks a normal setup).
+    for d in crate::devices::registry().iter().filter(|d| {
+        !d.custom
+            && (connected.is_empty() || connected.contains(&(d.vid, d.pid)))
+            && (((d.vid, d.pid) == vjoy_id) == vjoy_active)
+    }) {
+        append_block(&mut out, &device_block(d));
+    }
+    out
+}
+
 /// Write/refresh every known device's block in HOTASMappings.Remap (preserving
 /// any other devices), backing up the existing file first. Returns the backup path.
 pub fn write_hotas_mappings() -> Result<String, String> {
@@ -304,35 +352,12 @@ pub fn write_hotas_mappings() -> Result<String, String> {
     // Only emit blocks for devices that are actually CONNECTED. Multiple Joystick-role
     // blocks (the stale Thrustmaster entries MW5 ships with, or an absent Warthog) make
     // the game assign the "Joystick" device slot to the WRONG device, which leaves the
-    // present stick's BUTTONS dead (axes can still work off the sole Throttle device).
-    // So: keep existing blocks only for connected devices we DON'T manage (preserve a
-    // user's unknown stick), drop everything absent/stale, and re-emit our registry
-    // devices that are connected.
+    // present stick's BUTTONS dead. When vJoy feeds, every physical device gets an EMPTY
+    // block so MW5 reads only vJoy. All of that lives in `assemble_blocks` (pure/testable).
     let connected: Vec<(u16, u16)> = crate::input::poll().iter().map(|d| (d.vid, d.pid)).collect();
-    let registry_ids: Vec<(u16, u16)> = crate::devices::registry().iter().map(|d| (d.vid, d.pid)).collect();
-
-    let mut out = if connected.is_empty() {
-        // Safety: nothing detected — don't wipe the file; just manage our blocks in place.
-        strip_device_blocks(&existing, &registry_ids).trim_end().to_string()
-    } else {
-        retain_blocks(&existing, |vid, pid| {
-            connected.contains(&(vid, pid)) && !registry_ids.contains(&(vid, pid))
-        }).trim_end().to_string()
-    };
-    // When the vJoy feeder is ACTIVE, the user's whole rig is mirrored onto the one vJoy
-    // device, so vJoy is the sole Joystick AND Throttle: write ONLY the vJoy block and SKIP
-    // every physical device (else they'd fight vJoy for MW5's slots, or re-collapse buttons).
-    // When the feeder is off, write the physical blocks and NOT vJoy — a vJoy install never
-    // breaks a normal setup. So: a device is emitted iff (it is vJoy) == (vJoy is active).
     let vjoy_id = (0x1234u16, 0xBEADu16);
     let vjoy_active = crate::vjoy::is_active() && connected.contains(&vjoy_id);
-    for d in crate::devices::registry().iter().filter(|d| {
-        !d.custom
-            && (connected.is_empty() || connected.contains(&(d.vid, d.pid)))
-            && (((d.vid, d.pid) == vjoy_id) == vjoy_active) // vJoy-only when feeding, physical-only otherwise
-    }) {
-        append_block(&mut out, &device_block(d));
-    }
+    let out = assemble_blocks(&existing, &connected, vjoy_active);
 
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
@@ -392,6 +417,7 @@ mod tests {
             (Target::Button(20), "Joystick_Button20"),
             (Target::Button(21), "Throttle_Button1"),
             (Target::Button(32), "Throttle_Button12"),
+            (Target::Button(40), "Throttle_Button20"),
             (Target::Axis(crate::vjoy::HID_X), "Joystick_Axis1"),
             (Target::Axis(crate::vjoy::HID_Y), "Joystick_Axis2"),
             (Target::Axis(crate::vjoy::HID_RX), "Joystick_Axis4"),
@@ -404,12 +430,12 @@ mod tests {
         }
         // out of range -> None
         assert_eq!(vjoy_target_token(&Target::Button(0)), None);
-        assert_eq!(vjoy_target_token(&Target::Button(33)), None);
+        assert_eq!(vjoy_target_token(&Target::Button(41)), None);
 
         // AGREEMENT: every OutButtons=/OutAxis= token vjoy_block() emits must be one
-        // vjoy_target_token produces over buttons 1..32 + the six routed axes.
+        // vjoy_target_token produces over buttons 1..40 + the six routed axes.
         let mut produced = std::collections::HashSet::new();
-        for n in 1..=32u8 {
+        for n in 1..=40u8 {
             if let Some(t) = vjoy_target_token(&Target::Button(n)) { produced.insert(t); }
         }
         for u in [crate::vjoy::HID_X, crate::vjoy::HID_Y, crate::vjoy::HID_RX,
@@ -436,5 +462,36 @@ mod tests {
         let blk = mrp_pedal_block();
         assert!(blk.contains("OutAxis=Throttle_Axis2"), "MRP must drive Throttle_Axis2");
         assert!(blk.contains("OutAxis=Throttle_Axis1"), "MRP rudder must drive Throttle_Axis1");
+    }
+
+    #[test]
+    fn vjoy_block_matches_evilc_base_txt() {
+        let blk = vjoy_block();
+        assert!(blk.contains("NAME: vJoy Stick"), "evilC header NAME: vJoy Stick");
+        assert!(blk.contains("VID: 0x1234") && blk.contains("PID: 0xBEAD"), "evilC VID/PID");
+        assert!(blk.contains("InButton=GenericUSBController_Button1, OutButtons=Joystick_Button1"));
+        assert!(blk.contains("InButton=GenericUSBController_Button20, OutButtons=Joystick_Button20"));
+        assert!(blk.contains("InButton=GenericUSBController_Button21, OutButtons=Throttle_Button1"));
+        assert!(blk.contains("InButton=GenericUSBController_Button40, OutButtons=Throttle_Button20"));
+        assert!(blk.contains("InButton=GenericUSBController_Hat8, OutButtons=Joystick_Hat_8"));
+        assert!(blk.contains("InAxis=GenericUSBController_Axis6, OutAxis=Throttle_Axis1, Invert=FALSE, Offset=-0.5, DeadZoneMin=0.0, DeadZoneMax=0.0, MapToDeadZone=FALSE"));
+        // 40 buttons + 8 hats = 48 BUTTON lines; 6 AXIS lines.
+        assert_eq!(blk.matches("BUTTON:").count(), 48, "40 buttons + 8 hats");
+        assert_eq!(blk.matches("AXIS:").count(), 6, "6 axes");
+    }
+
+    #[test]
+    fn vjoy_mode_emits_empty_physical_blocks_before_vjoy() {
+        // vJoy active, AB6 + vJoy connected: the AB6 must appear as an EMPTY block (so MW5
+        // ignores the raw stick) BEFORE the vJoy block, with no BUTTON/AXIS lines under it.
+        let out = assemble_blocks("", &[(0x346E, 0x1002), (0x1234, 0xBEAD)], true);
+        let ab6 = out.find("NAME: MOZA AB6 FFB Base").expect("empty AB6 block present");
+        let vjoy = out.find("NAME: vJoy Stick").expect("vJoy block present");
+        assert!(ab6 < vjoy, "empty physical blocks must precede the vJoy block");
+        // the AB6 block (up to the next START_BIND) must carry NO mappings.
+        let after = &out[ab6..];
+        let next = after[1..].find("START_BIND").map(|i| i + 1).unwrap_or(after.len());
+        assert!(!after[..next].contains("BUTTON:"), "physical block must be EMPTY (no BUTTON)");
+        assert!(!after[..next].contains("AXIS:"), "physical block must be EMPTY (no AXIS)");
     }
 }

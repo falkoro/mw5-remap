@@ -69,6 +69,29 @@ pub fn clear_button(ui: &mut egui::Ui) -> Response {
     resp
 }
 
+/// A small, FONT-SAFE up/down reorder arrow (the triangle is PAINTED, never a tofu glyph),
+/// styled to match `clear_button`: quiet by default, accent-tinted on hover. `enabled=false`
+/// greys it out (the caller ignores its click). Used to move a device image up/down in the
+/// sidebar. Returns the click `Response`.
+pub fn arrow_button(ui: &mut egui::Ui, up: bool, enabled: bool) -> Response {
+    let (rect, resp) = ui.allocate_exact_size(Vec2::splat(18.0), egui::Sense::click());
+    let hov = enabled && resp.hovered();
+    let p = ui.painter();
+    if hov {
+        p.rect_filled(rect.shrink(1.0), Rounding::same(R_CHIP), tint(ACCENT, 0.72));
+    }
+    let c = rect.center();
+    let col = if !enabled { RIM_STRONG } else if hov { ACCENT_DK } else { TEXT_DIM };
+    let (w, h) = (4.0, 3.0);
+    let pts = if up {
+        vec![c + Vec2::new(-w, h), c + Vec2::new(w, h), c + Vec2::new(0.0, -h)]
+    } else {
+        vec![c + Vec2::new(-w, -h), c + Vec2::new(w, -h), c + Vec2::new(0.0, h)]
+    };
+    p.add(egui::Shape::convex_polygon(pts, col, Stroke::NONE));
+    resp
+}
+
 // ── Global visuals ──────────────────────────────────────────────────────────────────────
 /// Apply the theme to the whole context (call once per frame; cheap + idempotent). This is
 /// what makes the central panel, the toolbar, combo-boxes, popups and scrollbars cohere.

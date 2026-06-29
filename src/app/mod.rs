@@ -8,7 +8,7 @@ mod detect;
 mod export_ui;
 mod panels;
 mod tabs;
-mod theme;
+pub(crate) mod theme; // shared design system — also used by the visual sidebar chrome
 mod toolbar;
 mod vjoy_ui;
 mod widgets;

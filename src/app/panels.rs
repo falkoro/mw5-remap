@@ -201,7 +201,7 @@ pub(super) fn central(
                     for (cat, idxs) in groups_in_col {
                         col.add_space(3.0);
                         col.strong(cat);
-                        egui::Grid::new(format!("grid_{cat}")).num_columns(4).spacing([8.0, 3.0]).striped(true).show(col, |ui| {
+                        egui::Grid::new(format!("grid_{cat}")).num_columns(5).spacing([4.0, 3.0]).striped(true).show(col, |ui| {
                             for &i in idxs.iter() {
                                 binding_row(ui, i, actions, rows, capture, devices, p, status, &hot, vjoy_map);
                             }

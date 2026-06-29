@@ -91,3 +91,20 @@ two share `VID 1234 / PID BEAD` and are indistinguishable to MW5, so it reads th
    dist/MW5-Remap-Setup.exe libunwind.dll`.
 
 Co-author trailer for commits: `Claude Opus 4.8 (1M context) <noreply@anthropic.com>`.
+
+## Hard-won findings & references (READ before touching the MW5 `.Remap`)
+- **The evilC/MW5HOTAS tool's `.Remap` STRUCTURE is the ground truth** (`Program.cs` + `Base.txt`
+  in github.com/evilC/MW5HOTAS): for EACH physical stick it writes an **EMPTY block** (`START_BIND`
+  / `NAME` / `VID` / `PID` + a blank line, NO mappings — this makes MW5 **ignore** the real stick),
+  THEN appends ONE vJoy block (`NAME: vJoy Stick`, `VID: 0x1234`, `PID: 0xBEAD`) carrying ALL the
+  mappings: 40 buttons (1-20 → `Joystick_Button1-20`, 21-40 → `Throttle_Button1-20`), 8 hats
+  (`GenericUSBController_HatN` → `Joystick_Hat_N`), axes `GenericUSBController_AxisN` (1-based) →
+  the role token, params `Invert=FALSE, Offset=-0.5, DeadZoneMin=0.0, DeadZoneMax=0.0, MapToDeadZone=FALSE`.
+- **The "Joystick Button 1" collapse = our `.Remap` was MISSING the empty physical-device blocks**,
+  so MW5 kept reading the raw physical sticks (the MOZA's 128 buttons all → Button 1) instead of
+  vJoy. `write_hotas_mappings` (vJoy mode) MUST emit an empty block per known physical device
+  BEFORE the vJoy block. vJoy IS the right approach for multi-peripheral rigs (it merges N
+  sticks into MW5's two slots); direct per-device binding only suits a 1-2 stick setup.
+- References: repo root `HOTASMappings.Remap` (a Virpil user's confirmed-working DIRECT file —
+  note it has NO vJoy; useful as a format example) and `MW5HotasRemappingDocumentation.pdf`
+  (PGI's official HOTAS remapping spec).

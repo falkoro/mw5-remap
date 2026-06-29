@@ -38,6 +38,9 @@ pub(super) fn top_bar(
         // horizontal_wrapped: on a narrow window the buttons flow onto a second row
         // instead of clipping, so every control stays reachable.
         ui.horizontal_wrapped(|ui| {
+            // Consistent gaps so the wrapped rows don't read as ragged (esp. the vertical
+            // gap when buttons flow onto a second line on a narrow window).
+            ui.spacing_mut().item_spacing = egui::vec2(6.0, 6.0);
             ui.label("Game:");
             let mut want = *selected;
             egui::ComboBox::from_id_salt("game")

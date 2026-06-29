@@ -9,6 +9,27 @@ use crate::vjoy_map::VjoyMap;
 use eframe::egui;
 use std::collections::{HashMap, HashSet};
 
+// Fixed grid-cell widths so every binding row lines up DEAD STRAIGHT down the column,
+// whatever a given row contains: the action label, the chip, the "· device" hint, the
+// clear ×, and the invert/scale controls each own a constant-width, vertically-centred
+// cell (see `cell`). A row with no hint / a button row (no trim) keeps the same columns.
+const W_LABEL: f32 = 152.0;
+const W_CHIP: f32 = 154.0; // the chip is 150 wide (theme::chip min_size) + a little slack
+const W_HINT: f32 = 76.0; // the dim "· device" hint sits in its OWN cell, never behind the chip
+const W_CLEAR: f32 = 22.0;
+const W_TRIM: f32 = 92.0; // Inv checkbox + scale DragValue (axis rows only)
+
+/// A fixed-width cell, full row-height, with its content vertically CENTRED — the building
+/// block that keeps the binding-grid columns aligned regardless of a row's contents.
+fn cell<R>(ui: &mut egui::Ui, w: f32, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
+    ui.allocate_ui_with_layout(
+        egui::vec2(w, theme::CHIP_H),
+        egui::Layout::left_to_right(egui::Align::Center),
+        add,
+    )
+    .inner
+}
+
 /// An in-progress "press a control to bind it" capture. Lives here because
 /// `binding_row` both starts one and reads it; `mod.rs` resolves it each frame.
 #[derive(Clone)]
@@ -57,15 +78,12 @@ pub(super) fn binding_row(
     let token = rows[i].token.clone();
     let live = !token.is_empty() && hot.iter().any(|h| h == &token);
 
-    // Every cell is a fixed-height row centred on the chip, so the action label, chip,
-    // "· vJoy" hint, clear button and the invert/scale controls line up down the columns.
-    let row = theme::CHIP_H;
-
-    // action label — green while its control is live, amber while (re)binding
+    // action label — green while its control is live, amber while (re)binding. Truncates
+    // inside its fixed cell (full name on hover) so a long label never wraps the row height.
     let lbl_col = if capturing { theme::CAP_DK } else if live { theme::ACCENT_DK } else { theme::TEXT };
-    ui.horizontal(|ui| {
-        ui.set_min_height(row);
-        ui.colored_label(lbl_col, &actions[i].label);
+    cell(ui, W_LABEL, |ui| {
+        ui.add(egui::Label::new(egui::RichText::new(&actions[i].label).color(lbl_col)).truncate())
+            .on_hover_text(actions[i].label.as_str());
     });
 
     // The chip: one clean, rounded, role-aware button (theme::chip). The state picks its
@@ -79,19 +97,26 @@ pub(super) fn binding_row(
     } else {
         (theme::ChipState::Bound(theme::device_color(&token)), pretty_token(&token))
     };
-    // chip + a dim "which joystick" hint share one grid cell (keeps the 4-column layout).
-    let clicked = ui.horizontal(|ui| {
-        ui.set_min_height(row);
-        let resp = theme::chip(ui, &text, state)
-            .on_hover_text("Click, then press the control / move the axis. Esc cancels.");
+    let clicked = cell(ui, W_CHIP, |ui| {
+        theme::chip(ui, &text, state)
+            .on_hover_text("Click, then press the control / move the axis. Esc cancels.")
+            .clicked()
+    });
+
+    // The dim "which joystick" hint gets its OWN cell to the RIGHT of the chip — never
+    // behind it, never clipping the chip. Truncates long device names (full name on hover).
+    cell(ui, W_HINT, |ui| {
         if !token.is_empty() && !capturing {
             if let Some(dev) = crate::visual::token_device(&token, vjoy_map, devices) {
-                ui.label(egui::RichText::new(format!("· {dev}")).size(10.5).color(theme::TEXT_FAINT))
-                    .on_hover_text("Which physical joystick feeds this binding.");
+                ui.add(
+                    egui::Label::new(egui::RichText::new(format!("· {dev}")).size(10.5).color(theme::TEXT_FAINT))
+                        .truncate(),
+                )
+                .on_hover_text(format!("Fed by {dev}"));
             }
         }
-        resp.clicked()
-    }).inner;
+    });
+
     if clicked {
         if capturing {
             *capture = None;
@@ -109,16 +134,15 @@ pub(super) fn binding_row(
 
     // clear button (only when bound) — a PAINTED, font-safe × (never a tofu glyph),
     // centred to the chip so the column stays aligned. Empty cell keeps the row height.
-    ui.horizontal(|ui| {
-        ui.set_min_height(row);
+    cell(ui, W_CLEAR, |ui| {
         if !token.is_empty() && theme::clear_button(ui).on_hover_text("Clear this binding").clicked() {
             rows[i].token.clear();
         }
     });
 
     // invert + scale (axes only); an empty cell holds the column for button rows.
-    ui.horizontal(|ui| {
-        ui.set_min_height(row);
+    cell(ui, W_TRIM, |ui| {
+        ui.spacing_mut().item_spacing.x = 4.0; // keep "Inv" + the scale field inside the cell
         if actions[i].kind == Kind::Axis {
             let mut inv = rows[i].scale < 0.0;
             if ui.checkbox(&mut inv, "Inv").changed() {
