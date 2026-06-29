@@ -26,7 +26,6 @@ pub(super) fn top_bar(
     show_export_dialog: &mut bool,
     profile: &mut String,
     profile_input: &mut String,
-    vjoy_enabled: &mut bool,
 ) -> bool {
     let mut reload = false;
     egui::TopBottomPanel::top("top").show(ctx, |ui| {
@@ -116,22 +115,8 @@ pub(super) fn top_bar(
             // (Config-lock feature removed: MW5 doesn't actually rewrite the bindings on
             // launch, and a read-only config can make MW5 ignore it — so save() just
             // ensures the file is writable and leaves it that way.)
-            // vJoy mode: mirror the WHOLE MOZA rig (buttons + aim/look + throttle + rudder)
-            // onto ONE clean vJoy device, fed live by the app — so MW5 reads a tidy 20-button
-            // stick instead of the AB6's 128 buttons (which it collapses to "Button 1").
-            let vjoy_ok = crate::vjoy::available();
-            let vlabel = if *vjoy_enabled { "🕹 vJoy mode: ON" } else { "🕹 vJoy mode" };
-            let vhover = if vjoy_ok {
-                "Mirror your MOZA stick+pedals onto ONE clean vJoy device so MW5's buttons actually fire (fixes the 128-button collapse). Toggle ON, 💾 Save, KEEP THE APP OPEN while playing, then bind controls in MW5 to the vJoy device."
-            } else {
-                "vJoy not detected/enabled — install vJoy and configure device 1 first (status MISS/FREE)."
-            };
-            if ui.add_enabled(vjoy_ok, egui::SelectableLabel::new(*vjoy_enabled, vlabel)).on_hover_text(vhover).clicked() {
-                *vjoy_enabled = !*vjoy_enabled;
-                crate::vjoy::set_active(*vjoy_enabled); // gates the vJoy .Remap block / MOZA skip
-                *status = if *vjoy_enabled { "vJoy mode ON — mirroring your whole rig to vJoy. 💾 Save, then keep the app open while playing.".into() }
-                          else { "vJoy mode off.".into() };
-            }
+            // vJoy routing now lives in its own "Route to vJoy" panel (src/app/vjoy_ui.rs):
+            // config-driven, any stick -> vJoy, no device-specific code here anymore.
             if ui.add_enabled(avail, egui::Button::new("📊 Export diagram"))
                 .on_hover_text("Export the device images (with callouts) as PNG and/or PDF").clicked()
             {

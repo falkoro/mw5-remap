@@ -1,0 +1,312 @@
+//! Config-driven physical-joystick -> vJoy routing — a built-in Joystick-Gremlin
+//! replacement. The user builds mappings in the UI (or auto-routes a whole stick);
+//! each maps one physical button bit / axis of a device (by VID/PID) onto a vJoy
+//! button or axis. Bindings live in a TEXT file (no serde, no code edits), so ANY
+//! stick can be routed onto vJoy device 1 without touching the source.
+//!
+//! File: `%LOCALAPPDATA%\MW5-Remap\vjoy_map.txt`, one mapping per line, tab-separated:
+//!   `VID<TAB>PID<TAB>SRC<TAB>TGT<TAB>INV`  (VID/PID hex; SRC/TGT `B<n>`|`A<n>`; INV 0/1)
+//! e.g. `346E\t1002\tB0\tB1\t0` = device 346E:1002 button-bit 0 -> vJoy Button 1.
+
+use crate::input::Device;
+use crate::vjoy;
+use std::path::PathBuf;
+
+/// A physical input on a device: a button BIT index (0..31) or an axis index (0..7).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Source {
+    Button(u8),
+    Axis(u8),
+}
+
+/// A vJoy output: a button (1..128) or an axis (by HID usage id, e.g. `HID_X`).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Target {
+    Button(u8),
+    Axis(u32),
+}
+
+/// One physical-input -> vJoy-output routing for a device identified by VID/PID.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct Mapping {
+    pub vid: u16,
+    pub pid: u16,
+    pub source: Source,
+    pub target: Target,
+    pub invert: bool,
+}
+
+/// The whole routing table.
+#[derive(Default)]
+pub struct VjoyMap {
+    pub mappings: Vec<Mapping>,
+}
+
+/// The six vJoy axes we auto-route onto, in order (X,Y,Z,Rx,Ry,Rz).
+pub const VJOY_AXES: [u32; 6] = [vjoy::HID_X, vjoy::HID_Y, vjoy::HID_Z, vjoy::HID_RX, vjoy::HID_RY, vjoy::HID_RZ];
+
+/// Friendly axis name for a vJoy HID usage id.
+pub fn axis_name(usage: u32) -> String {
+    match usage {
+        vjoy::HID_X => "X".into(),
+        vjoy::HID_Y => "Y".into(),
+        vjoy::HID_Z => "Z".into(),
+        vjoy::HID_RX => "Rx".into(),
+        vjoy::HID_RY => "Ry".into(),
+        vjoy::HID_RZ => "Rz".into(),
+        u => format!("U{u}"),
+    }
+}
+
+impl Source {
+    pub fn label(&self) -> String {
+        match self {
+            Source::Button(b) => format!("Button {}", b + 1),
+            Source::Axis(a) => format!("Axis {}", a + 1),
+        }
+    }
+    fn encode(&self) -> String {
+        match self {
+            Source::Button(b) => format!("B{b}"),
+            Source::Axis(a) => format!("A{a}"),
+        }
+    }
+    fn decode(s: &str) -> Option<Source> {
+        let n = s.get(1..)?.parse::<u8>().ok()?;
+        match s.as_bytes().first()? {
+            b'B' => Some(Source::Button(n)),
+            b'A' => Some(Source::Axis(n)),
+            _ => None,
+        }
+    }
+}
+
+impl Target {
+    pub fn label(&self) -> String {
+        match self {
+            Target::Button(b) => format!("vJoy Button {b}"),
+            Target::Axis(u) => format!("vJoy Axis {}", axis_name(*u)),
+        }
+    }
+    fn encode(&self) -> String {
+        match self {
+            Target::Button(b) => format!("B{b}"),
+            Target::Axis(u) => format!("A{u}"),
+        }
+    }
+    fn decode(s: &str) -> Option<Target> {
+        let rest = s.get(1..)?;
+        match s.as_bytes().first()? {
+            b'B' => Some(Target::Button(rest.parse().ok()?)),
+            b'A' => Some(Target::Axis(rest.parse().ok()?)),
+            _ => None,
+        }
+    }
+}
+
+/// One concrete vJoy call apply() would make — pure, so apply's logic is testable
+/// without a real vJoy driver.
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub enum Call {
+    Button(u8, bool),
+    Axis(u32, i32),
+}
+
+fn map_path() -> PathBuf {
+    let base = std::env::var("LOCALAPPDATA").unwrap_or_default();
+    PathBuf::from(base).join("MW5-Remap").join("vjoy_map.txt")
+}
+
+fn encode_line(m: &Mapping) -> String {
+    format!("{:04X}\t{:04X}\t{}\t{}\t{}", m.vid, m.pid, m.source.encode(), m.target.encode(), m.invert as u8)
+}
+
+fn parse_line(line: &str) -> Option<Mapping> {
+    let mut it = line.split('\t');
+    let vid = u16::from_str_radix(it.next()?.trim(), 16).ok()?;
+    let pid = u16::from_str_radix(it.next()?.trim(), 16).ok()?;
+    let source = Source::decode(it.next()?.trim())?;
+    let target = Target::decode(it.next()?.trim())?;
+    let invert = it.next().unwrap_or("0").trim() != "0";
+    Some(Mapping { vid, pid, source, target, invert })
+}
+
+impl VjoyMap {
+    /// Load the routing table from disk (empty if missing/unreadable).
+    pub fn load() -> VjoyMap {
+        let mut map = VjoyMap::default();
+        if let Ok(text) = std::fs::read_to_string(map_path()) {
+            for line in text.lines() {
+                if line.trim().is_empty() { continue; }
+                if let Some(m) = parse_line(line) { map.mappings.push(m); }
+            }
+        }
+        map
+    }
+
+    /// Persist the routing table.
+    pub fn save(&self) -> Result<(), String> {
+        let p = map_path();
+        if let Some(dir) = p.parent() { std::fs::create_dir_all(dir).map_err(|e| e.to_string())?; }
+        let mut s = String::new();
+        for m in &self.mappings { s.push_str(&encode_line(m)); s.push_str("\r\n"); }
+        std::fs::write(&p, s).map_err(|e| e.to_string())
+    }
+
+    /// Add a mapping, replacing any existing one for the same device + physical source
+    /// (so re-binding a control overwrites it). Does NOT save — the caller does.
+    pub fn add(&mut self, m: Mapping) {
+        self.mappings.retain(|x| !(x.vid == m.vid && x.pid == m.pid && x.source == m.source));
+        self.mappings.push(m);
+    }
+
+    /// Remove the mapping at `idx` (no-op if out of range).
+    pub fn remove(&mut self, idx: usize) {
+        if idx < self.mappings.len() { self.mappings.remove(idx); }
+    }
+
+    /// The next unused vJoy button number (max used + 1, or 1 if none).
+    pub fn next_free_button(&self) -> u8 {
+        self.mappings.iter()
+            .filter_map(|m| if let Target::Button(b) = m.target { Some(b) } else { None })
+            .max().map(|b| b + 1).unwrap_or(1)
+    }
+
+    fn used_axes(&self) -> Vec<u32> {
+        self.mappings.iter().filter_map(|m| if let Target::Axis(u) = m.target { Some(u) } else { None }).collect()
+    }
+
+    /// Auto-route a whole stick: every button -> sequential free vJoy buttons, and each
+    /// present axis -> the next free vJoy axis (X,Y,Z,Rx,Ry,Rz). The fast path.
+    pub fn auto_route(&mut self, dev: &Device) {
+        let mut next = self.next_free_button();
+        for bit in 0..dev.num_buttons.min(32) as u8 {
+            if next > 128 { break; }
+            self.add(Mapping { vid: dev.vid, pid: dev.pid, source: Source::Button(bit), target: Target::Button(next), invert: false });
+            next += 1;
+        }
+        let mut used = self.used_axes();
+        for slot in 0..8u8 {
+            if !dev.present[slot as usize] { continue; }
+            let free = VJOY_AXES.iter().copied().find(|u| !used.contains(u));
+            if let Some(usage) = free {
+                self.add(Mapping { vid: dev.vid, pid: dev.pid, source: Source::Axis(slot), target: Target::Axis(usage), invert: false });
+                used.push(usage);
+            }
+        }
+    }
+
+    /// Pure: the vJoy calls this map produces for the given device state.
+    pub fn resolve(&self, devices: &[Device]) -> Vec<Call> {
+        let mut out = Vec::new();
+        for m in &self.mappings {
+            let dev = match devices.iter().find(|d| d.vid == m.vid && d.pid == m.pid) {
+                Some(d) => d, None => continue,
+            };
+            let pressed = |bit: u8| dev.buttons & (1u32 << bit) != 0;
+            let axis = |ax: u8| dev.axes.get(ax as usize).copied().unwrap_or(0);
+            out.push(match (m.source, m.target) {
+                (Source::Button(b), Target::Button(t)) => Call::Button(t, pressed(b) ^ m.invert),
+                (Source::Axis(a), Target::Axis(u)) => {
+                    let v = axis(a);
+                    Call::Axis(u, vjoy::scale(if m.invert { 65535 - v } else { v }))
+                }
+                (Source::Axis(a), Target::Button(t)) => Call::Button(t, (axis(a) > 32767) ^ m.invert),
+                (Source::Button(b), Target::Axis(u)) => {
+                    let on = pressed(b) ^ m.invert;
+                    Call::Axis(u, vjoy::scale(if on { 65535 } else { 0 }))
+                }
+            });
+        }
+        out
+    }
+
+    /// Feed the resolved calls to vJoy device 1.
+    pub fn apply(&self, devices: &[Device]) {
+        for c in self.resolve(devices) {
+            match c {
+                Call::Button(b, on) => { vjoy::feed_button(b, on); }
+                Call::Axis(u, v) => { vjoy::feed(u, v); }
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn dev(vid: u16, pid: u16) -> Device {
+        Device { id: 0, vid, pid, name: "t".into(), num_axes: 8, num_buttons: 32,
+            axes: [0; 8], present: [true; 8], buttons: 0, pov: 0xFFFF, has_pov: false }
+    }
+
+    #[test]
+    fn line_round_trip() {
+        let cases = [
+            Mapping { vid: 0x346E, pid: 0x1002, source: Source::Button(0), target: Target::Button(1), invert: false },
+            Mapping { vid: 0x231D, pid: 0x0201, source: Source::Axis(4), target: Target::Axis(vjoy::HID_Z), invert: true },
+        ];
+        for m in cases {
+            let line = encode_line(&m);
+            let back = parse_line(&line).expect("parse");
+            assert_eq!(back, m, "round-trip failed for line {line:?}");
+        }
+    }
+
+    #[test]
+    fn parse_skips_garbage() {
+        assert!(parse_line("not a mapping").is_none());
+        assert!(parse_line("").is_none());
+    }
+
+    #[test]
+    fn apply_resolves_button_and_axis() {
+        let mut d = dev(0x346E, 0x1002);
+        d.buttons = 1 << 3;       // button bit 3 held
+        d.axes[0] = 65535;        // axis 0 full
+        let map = VjoyMap { mappings: vec![
+            Mapping { vid: 0x346E, pid: 0x1002, source: Source::Button(3), target: Target::Button(5), invert: false },
+            Mapping { vid: 0x346E, pid: 0x1002, source: Source::Button(2), target: Target::Button(6), invert: false },
+            Mapping { vid: 0x346E, pid: 0x1002, source: Source::Axis(0), target: Target::Axis(vjoy::HID_X), invert: false },
+            Mapping { vid: 0x346E, pid: 0x1002, source: Source::Axis(0), target: Target::Axis(vjoy::HID_Y), invert: true },
+        ] };
+        let calls = map.resolve(&[d]);
+        assert_eq!(calls[0], Call::Button(5, true));   // held
+        assert_eq!(calls[1], Call::Button(6, false));  // not held
+        assert_eq!(calls[2], Call::Axis(vjoy::HID_X, vjoy::scale(65535)));
+        assert_eq!(calls[3], Call::Axis(vjoy::HID_Y, vjoy::scale(0))); // inverted full -> 0
+    }
+
+    #[test]
+    fn resolve_ignores_absent_device() {
+        let map = VjoyMap { mappings: vec![
+            Mapping { vid: 0xDEAD, pid: 0xBEEF, source: Source::Button(0), target: Target::Button(1), invert: false },
+        ] };
+        assert!(map.resolve(&[dev(0x0001, 0x0002)]).is_empty());
+    }
+
+    #[test]
+    fn auto_route_assigns_sequential_buttons_and_free_axes() {
+        let mut d = dev(0x346E, 0x1002);
+        d.num_buttons = 3;
+        d.present = [true, true, false, false, false, false, false, false];
+        let mut map = VjoyMap::default();
+        map.auto_route(&d);
+        // 3 buttons -> vJoy 1,2,3 ; 2 present axes -> X,Y
+        let btns: Vec<_> = map.mappings.iter().filter_map(|m| if let Target::Button(b) = m.target { Some(b) } else { None }).collect();
+        assert_eq!(btns, vec![1, 2, 3]);
+        let axes: Vec<_> = map.mappings.iter().filter_map(|m| if let Target::Axis(u) = m.target { Some(u) } else { None }).collect();
+        assert_eq!(axes, vec![vjoy::HID_X, vjoy::HID_Y]);
+        assert_eq!(map.next_free_button(), 4);
+    }
+
+    #[test]
+    fn add_replaces_same_source() {
+        let mut map = VjoyMap::default();
+        map.add(Mapping { vid: 1, pid: 2, source: Source::Button(0), target: Target::Button(1), invert: false });
+        map.add(Mapping { vid: 1, pid: 2, source: Source::Button(0), target: Target::Button(9), invert: false });
+        assert_eq!(map.mappings.len(), 1);
+        assert_eq!(map.mappings[0].target, Target::Button(9));
+    }
+}

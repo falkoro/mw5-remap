@@ -259,18 +259,17 @@ pub fn write_hotas_mappings() -> Result<String, String> {
             connected.contains(&(vid, pid)) && !registry_ids.contains(&(vid, pid))
         }).trim_end().to_string()
     };
-    // When the vJoy feeder is ACTIVE, the WHOLE MOZA rig is mirrored onto the one vJoy
-    // device (buttons + aim/look + throttle + rudder), so vJoy is the sole Joystick AND
-    // Throttle: write only the vJoy block and SKIP both physical MOZA devices (else they'd
-    // fight vJoy for MW5's slots, and the AB6's own block re-collapses its buttons).
-    // When the feeder is off, do none of this — a vJoy install never breaks a normal setup.
-    let vjoy_active = crate::vjoy::is_active() && connected.contains(&(0x1234, 0xBEAD));
+    // When the vJoy feeder is ACTIVE, the user's whole rig is mirrored onto the one vJoy
+    // device, so vJoy is the sole Joystick AND Throttle: write ONLY the vJoy block and SKIP
+    // every physical device (else they'd fight vJoy for MW5's slots, or re-collapse buttons).
+    // When the feeder is off, write the physical blocks and NOT vJoy — a vJoy install never
+    // breaks a normal setup. So: a device is emitted iff (it is vJoy) == (vJoy is active).
+    let vjoy_id = (0x1234u16, 0xBEADu16);
+    let vjoy_active = crate::vjoy::is_active() && connected.contains(&vjoy_id);
     for d in crate::devices::registry().iter().filter(|d| {
         !d.custom
             && (connected.is_empty() || connected.contains(&(d.vid, d.pid)))
-            && !((d.vid, d.pid) == (0x1234, 0xBEAD) && !vjoy_active) // vJoy only when feeding it
-            && !((d.vid, d.pid) == (0x346E, 0x1200) && vjoy_active)  // skip MRP pedals when vJoy carries them
-            && !((d.vid, d.pid) == (0x346E, 0x1002) && vjoy_active)  // skip AB6 stick when vJoy carries it
+            && (((d.vid, d.pid) == vjoy_id) == vjoy_active) // vJoy-only when feeding, physical-only otherwise
     }) {
         append_block(&mut out, &device_block(d));
     }

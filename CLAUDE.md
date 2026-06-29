@@ -58,6 +58,12 @@ shows when a newer version exists. Repo: `falkoro/mw5-remap`.
   `toolbar.rs` (Save/Fix HOTAS/Lock/Reset/Export/Launch), `widgets.rs` (binding row + chip colours),
   `export_ui.rs` (PNG/PDF export dialog).
 - **`src/export.rs`**, **`src/diagram.rs`** — PNG/PDF sheet + HTML infographic.
+- **`src/vjoy.rs`**, **`src/vjoy_map.rs`**, **`src/app/vjoy_ui.rs`** — built-in Joystick-Gremlin: `vjoy.rs`
+  is the low-level vJoy feeder (`feed`/`feed_button`/`scale`, runtime-loaded `vJoyInterface.dll`);
+  `vjoy_map.rs` is the CONFIG-DRIVEN routing table (`Source`→`Target` mappings, persisted to
+  `%LOCALAPPDATA%\MW5-Remap\vjoy_map.txt`, pure testable `resolve()`); `vjoy_ui.rs` is the
+  "Route to vJoy" panel (select a stick, auto-route or capture-bind each control). No device-specific
+  code — ANY stick routes onto vJoy. `write_hotas_mappings` emits ONLY the vJoy `.Remap` block when feeding.
 - **`src/hidhide.rs`**, **`src/sys.rs`**, **`src/update.rs`** — HidHide, elevation/process utils, auto-update.
 
 ## MechWarrior 5 binding model (the important part)

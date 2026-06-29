@@ -6,17 +6,20 @@
 mod export_ui;
 mod panels;
 mod toolbar;
+mod vjoy_ui;
 mod widgets;
 
 pub(crate) use export_ui::ExportOpts;
 
 use crate::games::{self, Action, Binding, GameProvider, Kind};
+use crate::vjoy_map::VjoyMap;
 use crate::{hidhide, input, sys};
 use eframe::egui;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
+use vjoy_ui::VjoyCapture;
 use widgets::Capture;
 
 pub struct App {
@@ -40,7 +43,12 @@ pub struct App {
     last_panel_rect: egui::Rect,        // screen rect of the device SidePanel, captured during render
     profile: String,                    // currently selected binding profile (default: App Defaults)
     profile_input: String,              // "new profile name" text field
-    vjoy_enabled: bool,                 // feed combined toe-throttle + rudder into vJoy device 1
+    vjoy_map: VjoyMap,                  // config-driven physical-stick -> vJoy routing table
+    vjoy_sel: Option<(u16, u16)>,       // physical stick selected in the Route-to-vJoy panel
+    vjoy_capture: Option<VjoyCapture>,  // pending "actuate a control to bind it" capture
+    vjoy_btn_pick: u8,                  // vJoy button number the next bind targets
+    vjoy_axis_pick: u32,                // vJoy axis (HID usage) the next bind targets
+    vjoy_paused: bool,                  // pause feeding without deleting mappings
 }
 
 impl App {
@@ -82,7 +90,12 @@ impl App {
             last_panel_rect: egui::Rect::NOTHING,
             profile: crate::profiles::APP_DEFAULTS.to_string(),
             profile_input: String::new(),
-            vjoy_enabled: false,
+            vjoy_map: VjoyMap::load(),
+            vjoy_sel: None,
+            vjoy_capture: None,
+            vjoy_btn_pick: 1,
+            vjoy_axis_pick: crate::vjoy::HID_X,
+            vjoy_paused: false,
         };
         app.load_selected();
         app.crash_recover();
@@ -165,9 +178,11 @@ impl eframe::App for App {
         self.devices = input::poll();
         if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
             self.capture = None;
+            self.vjoy_capture = None;
             self.status = "Capture cancelled.".into();
         }
         self.resolve_capture();
+        vjoy_ui::resolve_capture(&mut self.vjoy_capture, &self.devices, &mut self.vjoy_map, &mut self.status);
         if self.textures.is_none() {
             self.textures = crate::visual::load_textures(ctx);
         }
@@ -183,7 +198,7 @@ impl eframe::App for App {
             }
         }
 
-        let App { games, selected, actions, rows, devices, capture, status, elevated, hidden, hide_state, textures, show_labels, update, show_export_dialog, export_opts, pending_export, export_shot_sent, last_panel_rect, profile, profile_input, vjoy_enabled } = self;
+        let App { games, selected, actions, rows, devices, capture, status, elevated, hidden, hide_state, textures, show_labels, update, show_export_dialog, export_opts, pending_export, export_shot_sent, last_panel_rect, profile, profile_input, vjoy_map, vjoy_sel, vjoy_capture, vjoy_btn_pick, vjoy_axis_pick, vjoy_paused } = self;
 
         // token -> bound action label, so the device diagram can show WHAT is bound
         // to each control (not just the control's name).
@@ -192,35 +207,17 @@ impl eframe::App for App {
             .filter_map(|b| actions.iter().find(|a| a.id == b.id).map(|a| (b.token.clone(), a.label.clone())))
             .collect();
 
-        // vJoy mode (evilC approach): mirror the whole MOZA rig onto ONE clean vJoy device
-        // each frame, so MW5 reads a tidy 20-button / 6-axis stick instead of the 128-button
-        // AB6 (which MW5 collapses to "Button 1"). AB6 -> buttons 1-20 + gimbal (aim) + thumb
-        // hat (look); MRP -> combined bipolar throttle (Z) + rudder (Rz). The .Remap maps this
-        // single vJoy device to BOTH the Joystick and Throttle roles.
-        if *vjoy_enabled {
-            use crate::vjoy::{combine_toes, feed, feed_button, scale, HID_RX, HID_RY, HID_RZ, HID_X, HID_Y, HID_Z};
-            // PRIMARY stick (MOZA AB6) -> vJoy buttons 1-20 (Joystick_Button1..20) + aim/look axes.
-            if let Some(ab6) = devices.iter().find(|d| (d.vid, d.pid) == (0x346E, 0x1002)) {
-                for b in 0..20u8 { feed_button(b + 1, ab6.buttons & (1u32 << b) != 0); }
-                feed(HID_X, scale(ab6.axes[0])); // gimbal X -> Joystick_Axis1 (aim)
-                feed(HID_Y, scale(ab6.axes[1])); // gimbal Y -> Joystick_Axis2 (aim)
-                feed(HID_RX, scale(ab6.axes[3])); // thumb hat Rx -> Joystick_Axis4 (look)
-                feed(HID_RY, scale(ab6.axes[4])); // thumb hat Ry -> Joystick_Axis5 (look)
-            }
-            // SECOND stick (VKB Gladiator EVO) -> vJoy buttons 21-32 (Throttle_Button1..12),
-            // so both sticks feed the ONE vJoy device MW5 reads (evilC: all sticks -> one vJoy).
-            if let Some(vkb) = devices.iter().find(|d| (d.vid, d.pid) == (0x231D, 0x0201)) {
-                for b in 0..12u8 { feed_button(21 + b, vkb.buttons & (1u32 << b) != 0); }
-            }
-            // Pedals (MOZA MRP) -> combined bipolar throttle (Z) + rudder (Rz).
-            if let Some(mrp) = devices.iter().find(|d| (d.vid, d.pid) == (0x346E, 0x1200)) {
-                feed(HID_Z, combine_toes(mrp.axes[4], mrp.axes[3])); // throttle -> Throttle_Axis2
-                feed(HID_RZ, scale(mrp.axes[5])); // rudder -> Throttle_Axis1
-            }
-        }
+        // Config-driven vJoy feed: route ANY physical stick onto vJoy device 1 from the
+        // user-built mapping table (no device-specific code). Feeding is ACTIVE whenever
+        // there's ≥1 mapping and the user hasn't paused; that same flag gates the vJoy
+        // .Remap block via write_hotas_mappings.
+        let vjoy_active = !*vjoy_paused && !vjoy_map.mappings.is_empty();
+        crate::vjoy::set_active(vjoy_active);
+        if vjoy_active { vjoy_map.apply(devices); }
 
         panels::update_banner(ctx, status, update);
-        let reload = toolbar::top_bar(ctx, games, selected, rows, actions, status, *elevated, hidden, hide_state, show_export_dialog, profile, profile_input, vjoy_enabled);
+        let reload = toolbar::top_bar(ctx, games, selected, rows, actions, status, *elevated, hidden, hide_state, show_export_dialog, profile, profile_input);
+        vjoy_ui::panel(ctx, devices, vjoy_map, vjoy_capture, vjoy_sel, vjoy_btn_pick, vjoy_axis_pick, vjoy_paused, status);
 
         egui::SidePanel::left("devices").resizable(true).default_width(440.0).show(ctx, |ui| {
             *last_panel_rect = ui.max_rect();

@@ -15,6 +15,7 @@ mod sys;
 mod update;
 mod visual;
 mod vjoy;
+mod vjoy_map;
 
 use eframe::egui;
 
