@@ -4,13 +4,13 @@
 //! `mod.rs` so the egui shell stays within the per-module size budget. Each fn takes
 //! only the app state it touches (mirrors how `panels`/`toolbar` are wired).
 
-use super::widgets::Capture;
+use super::widgets::{persist, Capture};
 use super::vjoy_ui::VjoyCapture;
 use super::{community_ui, export_ui, panels, toolbar, vjoy_ui, ExportOpts};
 use crate::community::{CommunityState, DownloadState};
 use crate::games::{Action, Binding, GameProvider};
-use crate::input;
 use crate::vjoy_map::VjoyMap;
+use crate::{hidhide, input};
 use eframe::egui;
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -120,6 +120,9 @@ pub(super) fn vjoy_setup_tab(
     vjoy_pair_rev: &mut u8,
     vjoy_paused: &mut bool,
     status: &mut String,
+    elevated: bool,
+    hidden: &mut Vec<String>,
+    hide_state: &PathBuf,
 ) {
     vjoy_ui::panel(ctx, devices, vjoy_map, vjoy_capture, vjoy_sel, vjoy_btn_pick, vjoy_axis_pick, vjoy_pair_fwd, vjoy_pair_rev, vjoy_paused, status);
     egui::CentralPanel::default().show(ctx, |ui| {
@@ -130,12 +133,69 @@ pub(super) fn vjoy_setup_tab(
         ).color(egui::Color32::from_rgb(95, 100, 115)));
         ui.separator();
         ui.strong("Connected sticks");
+        ui.label(egui::RichText::new(
+            "Hide a physical stick from games so MW5 sees only vJoy. This app stays whitelisted in HidHide, so it keeps reading the hidden stick to feed vJoy.",
+        ).color(egui::Color32::from_rgb(95, 100, 115)));
+        if !elevated {
+            ui.label(egui::RichText::new("Run as admin to hide devices (use the “Run as admin” button in the Bind tab).")
+                .color(egui::Color32::from_rgb(150, 120, 60)));
+        }
         ui.add_space(2.0);
         if devices.is_empty() {
             ui.label(egui::RichText::new("No controllers detected.").color(egui::Color32::from_rgb(150, 165, 190)));
         } else {
             for d in devices {
-                ui.label(format!("•  {}   ({:04X}:{:04X})", d.name, d.vid, d.pid));
+                stick_row(ui, d, elevated, hidden, hide_state, status);
+            }
+        }
+    });
+}
+
+/// vJoy enumerates under this VID; MW5 MUST keep seeing it, so it's never hideable.
+const VJOY_VID: u16 = 0x1234;
+
+/// One line in the "Connected sticks" list: the device, plus a per-device
+/// Hide-from-MW5 / Show toggle (HidHide). Hiding is VID-level (HidHide cloaks by
+/// device instance, which we select via the stick's VID); reflects the live hidden
+/// state by checking whether any cloaked path carries this VID.
+fn stick_row(
+    ui: &mut egui::Ui,
+    d: &input::Device,
+    elevated: bool,
+    hidden: &mut Vec<String>,
+    hide_state: &PathBuf,
+    status: &mut String,
+) {
+    ui.horizontal(|ui| {
+        ui.label(format!("•  {}   ({:04X}:{:04X})", d.name, d.vid, d.pid));
+        if d.vid == VJOY_VID {
+            ui.label(egui::RichText::new("← vJoy (MW5 must see this)").color(egui::Color32::from_rgb(95, 100, 115)));
+            return;
+        }
+        let tag = format!("VID_{:04X}", d.vid);
+        let is_hidden = hidden.iter().any(|p| p.to_uppercase().contains(&tag));
+        if !elevated {
+            ui.add_enabled(false, egui::Button::new("Hide from MW5"));
+        } else if is_hidden {
+            if ui.button("Show").on_hover_text("Un-cloak this stick so games see it again").clicked() {
+                let mine: Vec<String> = hidden.iter().filter(|p| p.to_uppercase().contains(&tag)).cloned().collect();
+                let n = hidhide::unhide(&mine);
+                hidden.retain(|p| !p.to_uppercase().contains(&tag));
+                if hidden.is_empty() { hidhide::set_cloak(false); } // nothing left cloaked
+                persist(hide_state, hidden);
+                *status = format!("Restored {n} device(s).");
+            }
+        } else if ui.button("Hide from MW5")
+            .on_hover_text("Cloak this stick from games via HidHide so MW5 sees only vJoy")
+            .clicked()
+        {
+            match hidhide::hide(&[format!("{:04X}", d.vid)]) {
+                Ok(r) => {
+                    for p in &r.hidden { if !hidden.contains(p) { hidden.push(p.clone()); } }
+                    persist(hide_state, hidden);
+                    *status = r.message;
+                }
+                Err(e) => *status = e,
             }
         }
     });

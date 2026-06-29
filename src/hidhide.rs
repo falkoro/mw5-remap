@@ -34,6 +34,15 @@ fn run(args: &[&str]) -> Result<String, String> {
     Ok(s)
 }
 
+/// Whitelist THIS app (its exe) in HidHide so it keeps reading devices it cloaks
+/// from games. Without this the vJoy feeder would lose the very sticks it hides.
+/// Idempotent; HidHideCLI ignores a duplicate registration.
+pub fn whitelist_self() {
+    if let Ok(exe) = std::env::current_exe() {
+        let _ = run(&["--app-reg", &exe.to_string_lossy()]);
+    }
+}
+
 /// Is the driver answering (not pending a reboot)?
 pub fn driver_ready() -> bool {
     match run(&["--cloak-state"]) {
@@ -88,6 +97,8 @@ pub fn hide(vids: &[String]) -> Result<HideResult, String> {
         return Err("HidHide is installed but needs a Windows RESTART to activate (driver pending reboot). \
                     Reboot, then click Hide again.".into());
     }
+    // Keep ourselves whitelisted so the vJoy feeder can still READ what we cloak.
+    whitelist_self();
     let targets = hide_targets(vids);
     if targets.is_empty() {
         return Ok(HideResult { hidden: Vec::new(), message: "No conflicting devices present to hide.".into() });
@@ -100,6 +111,23 @@ pub fn hide(vids: &[String]) -> Result<HideResult, String> {
         message: format!("Hidden {} device(s) from the game via HidHide.", targets.len()),
         hidden: targets,
     })
+}
+
+/// Un-hide specific device paths WITHOUT touching the global cloak switch (so any
+/// other still-hidden sticks stay cloaked). Used by the per-device "Show" toggle;
+/// the caller turns the cloak off itself once nothing is left hidden.
+pub fn unhide(paths: &[String]) -> usize {
+    if !installed() { return 0; }
+    let mut n = 0;
+    for p in paths {
+        if run(&["--dev-unhide", p]).is_ok() { n += 1; }
+    }
+    n
+}
+
+/// Flip the global HidHide cloak on/off (device hide-list is preserved either way).
+pub fn set_cloak(on: bool) {
+    let _ = run(&[if on { "--cloak-on" } else { "--cloak-off" }]);
 }
 
 /// Un-hide the given paths and turn cloaking off.
