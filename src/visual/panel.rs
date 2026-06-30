@@ -134,7 +134,7 @@ pub(super) fn device_scroll(
         ui.add_space(2.0);
         ui.separator();
         egui::CollapsingHeader::new(egui::RichText::new("Live axes").strong())
-            .default_open(false)
+            .default_open(true)
             .show(ui, |ui| live_axes(ui, devices, p, muted))
             .header_response
             .on_hover_text("Raw value of every axis on every device in view — find your axis while testing.");

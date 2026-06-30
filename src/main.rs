@@ -111,6 +111,15 @@ fn main() -> eframe::Result<()> {
         }
         return Ok(());
     }
+    // --screenshot <path>: run the GUI, grab ONE settled frame to PNG via eframe's own
+    // Screenshot command (works where a GDI/PrintWindow grab can't read the GL surface in a
+    // headless/remote session), then exit. Handled in App::update via the MW5_SHOT env var.
+    {
+        let a: Vec<String> = std::env::args().collect();
+        if let Some(i) = a.iter().position(|x| x == "--screenshot") {
+            if let Some(p) = a.get(i + 1) { std::env::set_var("MW5_SHOT", p); }
+        }
+    }
     let mut viewport = egui::ViewportBuilder::default()
         .with_inner_size([1500.0, 940.0])
         .with_min_inner_size([1000.0, 640.0])

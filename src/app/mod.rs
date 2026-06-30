@@ -204,6 +204,7 @@ impl App {
 impl eframe::App for App {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         theme::apply(ctx);
+        screenshot_tick(ctx); // --screenshot mode: grab one frame to PNG then close (no-op otherwise)
         self.devices = input::poll();
         if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
             self.capture = None;
@@ -306,4 +307,29 @@ impl Drop for App {
             let _ = std::fs::remove_file(&self.hide_state);
         }
     }
+}
+
+/// `--screenshot <path>` support (MW5_SHOT env): let the UI settle a few frames, fire eframe's
+/// own Screenshot command (reads the GL surface directly — works where a GDI grab can't), save
+/// the delivered image to PNG the next frame, then close. No-op when MW5_SHOT is unset.
+fn screenshot_tick(ctx: &egui::Context) {
+    let path = match std::env::var("MW5_SHOT") { Ok(p) => p, Err(_) => return };
+    use std::sync::atomic::{AtomicU32, Ordering};
+    static F: AtomicU32 = AtomicU32::new(0);
+    let f = F.fetch_add(1, Ordering::Relaxed);
+    if let Some(img) = export_ui::take_screenshot(ctx) {
+        let (w, h) = (img.width() as u32, img.height() as u32);
+        let mut out = image::RgbaImage::new(w, h);
+        for y in 0..h {
+            for x in 0..w {
+                let p = img.pixels[(y as usize) * w as usize + x as usize];
+                out.put_pixel(x, y, image::Rgba([p.r(), p.g(), p.b(), p.a()]));
+            }
+        }
+        let _ = out.save(&path);
+        ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+    } else if f == 25 {
+        ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot);
+    }
+    ctx.request_repaint();
 }
