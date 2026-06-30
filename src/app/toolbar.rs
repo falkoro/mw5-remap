@@ -54,7 +54,7 @@ pub(super) fn top_bar(
 
             let avail = games[*selected].available();
             ui.separator();
-            if ui.add_enabled(avail, egui::Button::new("⟳ Load current")).clicked() { reload = true; }
+            if ui.add_enabled(avail, egui::Button::new("Load current")).clicked() { reload = true; }
 
             // Profiles: pick the built-in "App Defaults" (= reset) or a saved layout to
             // fill the grid, save the current grid as a named profile, or delete one.

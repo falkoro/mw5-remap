@@ -32,14 +32,14 @@ pub(super) const MHG_MARKERS: &[Marker] = &[
 // spoke ring (MHG_HATS) shows WHICH way is pressed; this marker lists WHAT each way is
 // bound to and lights that row live. Drag the whole group by its dot (keyed "Coolie hat").
 pub(super) const MHG_HAT_INPUTS: &[(&str, &str)] = &[
-    ("↑  N", "Joystick_Hat_1"),
-    ("↗  NE", "Joystick_Hat_2"),
-    ("→  E", "Joystick_Hat_3"),
-    ("↘  SE", "Joystick_Hat_4"),
-    ("↓  S", "Joystick_Hat_5"),
-    ("↙  SW", "Joystick_Hat_6"),
-    ("←  W", "Joystick_Hat_7"),
-    ("↖  NW", "Joystick_Hat_8"),
+    ("N", "Joystick_Hat_1"),
+    ("NE", "Joystick_Hat_2"),
+    ("E", "Joystick_Hat_3"),
+    ("SE", "Joystick_Hat_4"),
+    ("S", "Joystick_Hat_5"),
+    ("SW", "Joystick_Hat_6"),
+    ("W", "Joystick_Hat_7"),
+    ("NW", "Joystick_Hat_8"),
 ];
 pub(super) const MHG_MULTI: &[MultiMarker] = &[mm(0.50, 0.27, "Coolie hat", MHG_HAT_INPUTS)];
 
@@ -53,8 +53,8 @@ pub(super) const BASE_MARKERS: &[Marker] = &[
 // MRP pedals -> Throttle axes. Number = the Throttle_Axis index (= the token).
 pub(super) const PEDAL_MARKERS: &[Marker] = &[
     m(0.50, 0.78, "1", "Rudder (turn legs)", "Throttle_Axis1"),
-    m(0.66, 0.40, "2", "Right toe → forward", "Throttle_Axis2"),
-    m(0.34, 0.40, "2", "Left toe → reverse", "Throttle_Axis2"),
+    m(0.66, 0.40, "2", "Right toe -> forward", "Throttle_Axis2"),
+    m(0.34, 0.40, "2", "Left toe -> reverse", "Throttle_Axis2"),
 ];
 
 // Main POV hat = 8-way (confirmed: MW5 Joystick_Hat_1..8, MOZA hat configurable
@@ -71,7 +71,7 @@ pub(super) const VKB_MARKERS: &[Marker] = &[
     m(0.50, 0.60, "1", "Roll ↔ (X)", "Joystick_Axis1"),
     m(0.50, 0.66, "2", "Pitch ↕ (Y)", "Joystick_Axis2"),
     // Lockable stick twist (Rz) -> yaw / leg-turn.
-    m(0.44, 0.50, "6", "Twist → yaw (Rz)", "Joystick_Axis6"),
+    m(0.44, 0.50, "6", "Twist -> yaw (Rz)", "Joystick_Axis6"),
     // 8-way top hat — bare "Joystick_Hat" lights on ANY octant (the spokes show which).
     m(0.40, 0.14, "", "Top hat (8-way)", "Joystick_Hat"),
     // Analog mini-stick on the grip head (axes are firmware-dependent: reference only).

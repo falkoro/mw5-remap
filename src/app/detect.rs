@@ -11,9 +11,9 @@ use crate::input;
 use crate::vjoy_map::{Source, Target, VjoyMap};
 use std::collections::{HashMap, HashSet};
 
-const HAT_ARROWS: [&str; 8] = ["↑", "↗", "→", "↘", "↓", "↙", "←", "↖"];
+const HAT_ARROWS: [&str; 8] = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"];
 
-/// The body that follows "Detected: " — e.g. `MOZA AB6 — Button 5  →  vJoy Button 5 ·
+/// The body that follows "Detected: " — e.g. `MOZA AB6 — Button 5  ->  vJoy Button 5 ·
 /// Fire Weapon Group 1`. When the pressed control is ROUTED in the vJoy table we ALWAYS
 /// show its vJoy target (even for a 1:1 map); otherwise we show the direct provider token.
 /// None when nothing is actuated.
@@ -51,7 +51,7 @@ fn routed(d: &input::Device, src: Source, vjoy_map: &VjoyMap) -> Option<Target> 
 }
 
 /// Append the RESULT to a physical-control readout. A ROUTED control ALWAYS shows
-/// `→ vJoy {target}` (even a 1:1 map), then `· {action}` when the resolved MW5 token is
+/// `-> vJoy {target}` (even a 1:1 map), then `· {action}` when the resolved MW5 token is
 /// bound. An unrouted control falls back to the direct provider token + its action.
 fn with_result(head: String, direct: Option<String>, target: Option<Target>, bound: &HashMap<String, String>) -> String {
     if let Some(t) = target {
@@ -62,13 +62,13 @@ fn with_result(head: String, direct: Option<String>, target: Option<Target>, bou
         };
         let action = crate::games::mw5::vjoy_target_token(&t).and_then(|tok| bound.get(&tok).cloned());
         return match action {
-            Some(a) => format!("{head}  →  vJoy {name} · {a}"),
-            None => format!("{head}  →  vJoy {name}"),
+            Some(a) => format!("{head}  ->  vJoy {name} · {a}"),
+            None => format!("{head}  ->  vJoy {name}"),
         };
     }
     let tok = match direct { Some(t) if !t.is_empty() => t, _ => return head };
     match bound.get(&tok) {
-        Some(a) => format!("{head}  →  {} · {a}", pretty_token(&tok)),
-        None => format!("{head}  →  {}", pretty_token(&tok)),
+        Some(a) => format!("{head}  ->  {} · {a}", pretty_token(&tok)),
+        None => format!("{head}  ->  {}", pretty_token(&tok)),
     }
 }

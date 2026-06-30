@@ -92,7 +92,8 @@ impl App {
         let mut app = App {
             games,
             selected: 0,
-            tab: Tab::Bind,
+            // MW5_SHOT_TAB=vjoy opens straight to the routing tab (used by --screenshot to capture it).
+            tab: if std::env::var("MW5_SHOT_TAB").as_deref() == Ok("vjoy") { Tab::VjoySetup } else { Tab::Bind },
             actions: Vec::new(),
             rows: Vec::new(),
             devices: Vec::new(),

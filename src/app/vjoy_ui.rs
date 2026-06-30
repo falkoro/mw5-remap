@@ -120,6 +120,30 @@ pub(super) fn panel(
                 }
                 ui.checkbox(paused, "⏸ Pause feeding").on_hover_text("Stop feeding vJoy without deleting mappings.");
             });
+            ui.horizontal_wrapped(|ui| {
+                // Unbind a WHOLE stick at once (the "collective" unbind) — e.g. drop the MOZA so
+                // only the VKB feeds vJoy, without picking off mappings one by one below.
+                if theme::pill_button(ui, cur.is_some(), "🔌 Unbind this stick", false)
+                    .on_hover_text("Remove ALL of the selected stick's vJoy mappings in one click.")
+                    .clicked()
+                {
+                    if let Some((vid, pid)) = *sel {
+                        let before = map.mappings.len();
+                        map.mappings.retain(|m| (m.vid, m.pid) != (vid, pid));
+                        let _ = map.save();
+                        *status = format!("Unbound this stick — removed {} mapping(s).", before - map.mappings.len());
+                    }
+                }
+                // Re-read vjoy_map.txt from disk: fixes the case where the app's in-memory routing
+                // drifted from the file (so a stick you removed in the file still feeds vJoy).
+                if theme::pill_button(ui, true, "Reload from disk", false)
+                    .on_hover_text("Re-read the routing file — use if a stick still feeds vJoy after you removed it.")
+                    .clicked()
+                {
+                    *map = VjoyMap::load();
+                    *status = format!("Reloaded routing from disk ({} mappings).", map.mappings.len());
+                }
+            });
         });
         ui.add_space(6.0);
 
@@ -151,7 +175,7 @@ pub(super) fn panel(
 
         // COMBINE two physical axes into ONE bipolar vJoy axis (two toe pedals -> one
         // forward/reverse throttle: centre=stop, fwd axis up, rev axis down).
-        theme::section(ui, "COMBINE TWO AXES → ONE", |ui| {
+        theme::section(ui, "COMBINE TWO AXES -> ONE", |ui| {
             ui.horizontal_wrapped(|ui| {
                 ui.label(egui::RichText::new("Target").color(theme::TEXT_DIM));
                 egui::ComboBox::from_id_salt("vjoy_pair_axis").selected_text(axis_name(*axis_pick)).show_ui(ui, |ui| {
@@ -169,7 +193,7 @@ pub(super) fn panel(
                     if let Some((vid, pid)) = *sel {
                         map.add(Mapping { vid, pid, source: Source::Pair(*pair_fwd, *pair_rev), target: Target::Axis(*axis_pick), invert: false });
                         let _ = map.save();
-                        *status = format!("Combined Axis {}+/Axis {}- → vJoy Axis {}.", *pair_fwd + 1, *pair_rev + 1, axis_name(*axis_pick));
+                        *status = format!("Combined Axis {}+/Axis {}- -> vJoy Axis {}.", *pair_fwd + 1, *pair_rev + 1, axis_name(*axis_pick));
                     }
                 }
             });
@@ -179,8 +203,19 @@ pub(super) fn panel(
         if !map.mappings.is_empty() {
             ui.add_space(6.0);
             let mut remove: Option<usize> = None;
-            theme::section(ui, &format!("MAPPINGS  ({})", map.mappings.len()), |ui| {
-                egui::ScrollArea::vertical().max_height(120.0).show(ui, |ui| {
+            // Conflicts: a vJoy target fed by MORE THAN ONE source (e.g. the AB6 AND the VKB both
+            // on vJoy Button 1) — MW5 merges them, so the same button does two things. Count each
+            // target so the offending rows can be flagged red and pruned.
+            let mut tcount: std::collections::HashMap<String, u32> = std::collections::HashMap::new();
+            for m in &map.mappings { *tcount.entry(m.target.label()).or_default() += 1; }
+            let conflicts = tcount.values().filter(|&&c| c > 1).count();
+            let header = if conflicts > 0 {
+                format!("MAPPINGS  ({})  —  ⚠ {conflicts} shared vJoy target(s)", map.mappings.len())
+            } else {
+                format!("MAPPINGS  ({})", map.mappings.len())
+            };
+            theme::section(ui, &header, |ui| {
+                egui::ScrollArea::vertical().max_height(140.0).show(ui, |ui| {
                     for i in 0..map.mappings.len() {
                         ui.horizontal(|ui| {
                             if ui.small_button("✕").on_hover_text("Remove this mapping").clicked() { remove = Some(i); }
@@ -190,8 +225,14 @@ pub(super) fn panel(
                             let m = &map.mappings[i];
                             ui.label(egui::RichText::new(format!("{:04X}:{:04X}", m.vid, m.pid)).size(11.5).color(theme::TEXT_DIM));
                             ui.label(egui::RichText::new(m.source.label()).color(theme::TEXT));
-                            ui.label(egui::RichText::new("→").color(theme::ACCENT_DK));
-                            ui.label(egui::RichText::new(m.target.label()).strong().color(theme::ACCENT_DK));
+                            ui.label(egui::RichText::new("->").color(theme::ACCENT_DK));
+                            let dup = tcount.get(&m.target.label()).copied().unwrap_or(0) > 1;
+                            let tcol = if dup { theme::DANGER } else { theme::ACCENT_DK };
+                            ui.label(egui::RichText::new(m.target.label()).strong().color(tcol));
+                            if dup {
+                                ui.label(egui::RichText::new("⚠").size(11.5).color(theme::DANGER))
+                                    .on_hover_text("This vJoy target is fed by more than one control — MW5 merges them. Remove the extra so only one stick drives it.");
+                            }
                         });
                     }
                 });

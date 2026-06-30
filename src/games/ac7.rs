@@ -1,6 +1,6 @@
 //! Ace Combat 7: Skies Unknown provider. Unlike MW5, AC7 binds a device's axis or
 //! button DIRECTLY to a flight action inside per-device `[Joystick-GUID]` sections
-//! of `Config/Input.ini` — there's no token→action indirection. So a binding token
+//! of `Config/Input.ini` — there's no token->action indirection. So a binding token
 //! here is `"VVVVPPPP|input"` (USB ids + the AC7 input, e.g. `"044F0402|Y:R"`).
 //!
 //! Reminder for users: AC7 ignores joysticks unless **Steam Input is disabled**.

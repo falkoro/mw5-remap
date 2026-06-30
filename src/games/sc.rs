@@ -51,8 +51,8 @@ fn catalog_full() -> Vec<(&'static str, Action)> {
         a("spaceship_targeting", "v_target_cycle_hostile_fwd", "Cycle Hostile Target", "Targeting", Button),
         a("spaceship_targeting", "v_target_cycle_all_fwd", "Cycle Any Target", "Targeting", Button),
         a("spaceship_targeting", "v_toggle_weapon_gimbal_lock", "Gimbal Lock", "Weapons", Button),
-        a("spaceship_power", "v_power_focus_group_1", "Power → Weapons", "Systems", Button),
-        a("spaceship_power", "v_power_focus_group_3", "Power → Engines", "Systems", Button),
+        a("spaceship_power", "v_power_focus_group_1", "Power -> Weapons", "Systems", Button),
+        a("spaceship_power", "v_power_focus_group_3", "Power -> Engines", "Systems", Button),
         // --- essential extras (audited) ---
         a("spaceship_general", "v_flightready", "Flight Ready (engines on)", "Systems", Button),
         a("spaceship_movement", "v_toggle_qdrive_engagement", "Quantum Travel", "Flight", Button),

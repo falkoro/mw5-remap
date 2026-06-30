@@ -194,7 +194,7 @@ fn stick_row(
         ui.label(egui::RichText::new(&d.name).strong().color(theme::TEXT));
         ui.label(egui::RichText::new(format!("{:04X}:{:04X}", d.vid, d.pid)).size(11.0).color(theme::TEXT_DIM));
         if is_vjoy {
-            ui.label(egui::RichText::new("← vJoy (MW5 must see this)").size(11.5).color(theme::ACCENT_DK));
+            ui.label(egui::RichText::new("<- vJoy (MW5 must see this)").size(11.5).color(theme::ACCENT_DK));
             return;
         }
         if is_hidden {

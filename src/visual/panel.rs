@@ -59,7 +59,7 @@ pub(super) fn device_scroll(
     bound: &HashMap<String, String>,
     remap: &HashMap<String, String>,
     oct: Option<u32>,
-    vkb_oct: Option<u32>,
+    _vkb_oct: Option<u32>, // VKB hat octant — unused now the device pictures don't show live glow
     markers_visible: bool,
     edit: bool,
     live: bool,
@@ -99,13 +99,12 @@ pub(super) fn device_scroll(
             markers: &'static [Marker],
             multi: &'static [MultiMarker],
             hats: &'static [(f32, f32, u8)],
-            oct: Option<u32>,
         }
         let all = [
-            Dev { id: super::AB6, key: "stick", caption: "MHG Flight Stick", tex: &tex.stick, markers: MHG_MARKERS, multi: MHG_MULTI, hats: MHG_HATS, oct },
-            Dev { id: super::AB6, key: "base", caption: "AB6 Base", tex: &tex.base, markers: BASE_MARKERS, multi: &[], hats: &[], oct: None },
-            Dev { id: super::MRP, key: "pedals", caption: "MRP Pedals", tex: &tex.pedals, markers: PEDAL_MARKERS, multi: &[], hats: &[], oct: None },
-            Dev { id: super::VKB, key: "vkb", caption: "VKB Gladiator EVO", tex: &tex.vkb, markers: VKB_MARKERS, multi: &[], hats: VKB_HATS, oct: vkb_oct },
+            Dev { id: super::AB6, key: "stick", caption: "MHG Flight Stick", tex: &tex.stick, markers: MHG_MARKERS, multi: MHG_MULTI, hats: MHG_HATS },
+            Dev { id: super::AB6, key: "base", caption: "AB6 Base", tex: &tex.base, markers: BASE_MARKERS, multi: &[], hats: &[] },
+            Dev { id: super::MRP, key: "pedals", caption: "MRP Pedals", tex: &tex.pedals, markers: PEDAL_MARKERS, multi: &[], hats: &[] },
+            Dev { id: super::VKB, key: "vkb", caption: "VKB Gladiator EVO", tex: &tex.vkb, markers: VKB_MARKERS, multi: &[], hats: VKB_HATS },
         ];
         let visible: Vec<&Dev> = all
             .iter()
@@ -126,7 +125,10 @@ pub(super) fn device_scroll(
             let up = if pos > 0 { Some(order[pos - 1].as_str()) } else { None };
             let down = if pos + 1 < order.len() { Some(order[pos + 1].as_str()) } else { None };
             reorder_header(ui, d.caption, d.key, up, down);
-            image_block(ui, "", d.tex, iw, d.markers, d.multi, d.hats, hot, d.oct, markers_visible, bound, remap, d.key, edit);
+            // Live glow lives on the cockpit CHIPS only (user choice): pass an empty hot set +
+            // no hat-octant so the device picture shows its static markers but never the
+            // duplicate green press-glow. `bound`/`remap` stay for the labelled callouts.
+            image_block(ui, "", d.tex, iw, d.markers, d.multi, d.hats, &[], None, markers_visible, bound, remap, d.key, edit);
             ui.add_space(6.0);
         }
 

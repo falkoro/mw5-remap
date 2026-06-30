@@ -147,7 +147,7 @@ mod tests {
         let mut ov = Overrides::new();
         ov.insert(("stick".into(), "Trigger".into()), (0.46, 0.45));
         // spaces + unicode in the marker-id must survive (it's the callout label)
-        ov.insert(("pedals".into(), "Right toe → forward".into()), (0.6601, 0.40));
+        ov.insert(("pedals".into(), "Right toe -> forward".into()), (0.6601, 0.40));
         let back = parse(&encode(&ov));
         assert_eq!(back.len(), 2);
         for (k, &(x, y)) in &ov {
