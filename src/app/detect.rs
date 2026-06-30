@@ -26,6 +26,8 @@ pub(super) fn detect_input(
 ) -> Option<String> {
     for (idx, d) in devices.iter().enumerate() {
         if muted.contains(&(d.vid, d.pid)) { continue; } // soft-muted from the LIVE display
+        if (d.vid, d.pid) == (0x1234, 0xBEAD) { continue; } // skip the vJoy device: the app FEEDS it,
+        // so it mirrors the physical press — detecting it too is the confusing "double" readout.
         if let Some(&b) = d.pressed_buttons().first() {
             let head = format!("{} — Button {}", d.name, b);
             let src = Source::Button(b.saturating_sub(1) as u8);

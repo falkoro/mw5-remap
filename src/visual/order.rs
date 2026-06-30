@@ -72,6 +72,9 @@ mod tests {
 
     #[test]
     fn ordered_appends_unknown_and_keeps_known_only() {
+        // Isolate from any persisted device_order.txt on this machine (the thread-local is
+        // seeded from the real file at first touch) so the test is pure.
+        ORDER.with(|o| o.borrow_mut().clear());
         // With nothing saved, order is exactly the given (default) order.
         let got = ordered(&["stick", "base", "pedals", "vkb"]);
         assert_eq!(got, vec!["stick", "base", "pedals", "vkb"]);
