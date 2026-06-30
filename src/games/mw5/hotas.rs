@@ -11,11 +11,12 @@ use super::{Mw5, Role};
 use crate::games::GameProvider; // brings Mw5::config_path (a trait method) into scope
 use std::sync::atomic::{AtomicBool, Ordering};
 
-/// GUI config-lock flag (default ON). When on, `mw5::save()` re-applies the read-only
-/// flag to GameUserSettings.ini AFTER writing, because a read-only file is exactly what
-/// PREVENTS MW5 from resetting the joystick bindings back to stock on its next launch.
-/// Mirrors `vjoy::set_active`/`is_active`.
-static CONFIG_LOCKED: AtomicBool = AtomicBool::new(true);
+/// GUI config-lock flag (default OFF — the user dislikes it and MW5 does NOT reset their
+/// bindings on launch, so the lock isn't needed on this install). When ON, `mw5::save()`
+/// re-applies the read-only flag to GameUserSettings.ini AFTER writing, because a read-only
+/// file is what PREVENTS MW5 (on installs that DO reset) from wiping the joystick bindings
+/// back to stock on its next launch. Mirrors `vjoy::set_active`/`is_active`.
+static CONFIG_LOCKED: AtomicBool = AtomicBool::new(false);
 
 /// Toggle the GUI config-lock flag (🔒 Lock config). Pure in-process state; the live
 /// file's read-only bit is (re)applied by `save()` when locked, and cleared by the
