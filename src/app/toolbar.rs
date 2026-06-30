@@ -122,22 +122,6 @@ pub(super) fn top_bar(
                     }
                 }
             }
-            // 🔒 Lock config (MW5 only): keep GameUserSettings read-only after Save so MW5
-            // can't reset the joystick bindings to stock on its next launch. Default ON.
-            // Turning it OFF immediately unlocks the live file so the user can edit bindings
-            // from MW5's own in-game menu.
-            if games[*selected].name().contains("MechWarrior") {
-                let mut locked = crate::games::mw5::is_config_locked();
-                if ui.add_enabled(avail, egui::Checkbox::new(&mut locked, "🔒 Lock config"))
-                    .on_hover_text("Keeps MW5 from resetting your joystick bindings to stock on launch")
-                    .changed()
-                {
-                    crate::games::mw5::set_config_locked(locked);
-                    if !locked {
-                        let _ = crate::games::mw5::set_readonly(&games[*selected].config_path(), false);
-                    }
-                }
-            }
             // vJoy routing now lives in its own "🕹 vJoy Setup" tab (src/app/tabs.rs ->
             // vjoy_ui.rs): config-driven, any stick -> vJoy, no routing UI in this view.
             if ui.add_enabled(avail, egui::Button::new("📊 Export diagram"))

@@ -18,10 +18,7 @@ use parse::{
 };
 
 // Keep the public path stable: games::mw5::write_hotas_mappings etc.
-pub use hotas::{
-    hotas_path, is_config_locked, producible_tokens, set_config_locked, set_config_readonly,
-    set_readonly, vjoy_target_token, write_hotas_mappings,
-};
+pub use hotas::{hotas_path, producible_tokens, vjoy_target_token, write_hotas_mappings};
 
 // Known MOZA hardware -> MW5 role (deterministic; falls back to enum order).
 const BASE: (u16, u16) = (0x346E, 0x1002); // MOZA AB6 FFB Base  -> Joystick (aim)
@@ -102,10 +99,9 @@ impl GameProvider for Mw5 {
         let path = self.config_path();
         let mut text = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
 
-        // Unlock so we can write — we re-lock at the end if 🔒 Lock config is on. (Read-only
-        // does NOT make MW5 ignore the file; it's what PREVENTS MW5 from resetting the
-        // joystick bindings to stock on launch, so we want it back on after a successful save.)
-        let _ = hotas::set_readonly(&path, false);
+        // Ensure the file is WRITABLE: clear any read-only flag a previous version (or the
+        // user) may have left, so the save always succeeds. We never set it read-only.
+        hotas::clear_readonly(&path);
 
         // backup
         let dir = Mw5::backup_dir();
@@ -180,12 +176,6 @@ impl GameProvider for Mw5 {
 
         std::fs::write(&path, text).map_err(|e| e.to_string())?;
 
-        // Re-lock (read-only) when 🔒 Lock config is on, so MW5 can't reset these bindings
-        // to stock the next time it launches. Re-saving always works because the top of
-        // save() clears read-only before writing.
-        if hotas::is_config_locked() {
-            let _ = hotas::set_readonly(&path, true);
-        }
         Ok(SaveReport { backup: backup.display().to_string(), changed, missing })
     }
 

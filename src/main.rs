@@ -71,14 +71,6 @@ fn main() -> eframe::Result<()> {
         cli::sc_test();
         return Ok(());
     }
-    if std::env::args().any(|a| a == "--lock" || a == "--unlock") {
-        let lock = std::env::args().any(|a| a == "--lock");
-        match games::mw5::set_config_readonly(lock) {
-            Ok(()) => println!("GameUserSettings.ini is now {}.", if lock { "LOCKED (read-only) — MW5 can't reset your bindings" } else { "unlocked" }),
-            Err(e) => println!("FAILED: {e}"),
-        }
-        return Ok(());
-    }
     if std::env::args().any(|a| a == "--diagram") {
         cli::make_diagram();
         return Ok(());
@@ -123,13 +115,13 @@ fn main() -> eframe::Result<()> {
     let mut viewport = egui::ViewportBuilder::default()
         .with_inner_size([1500.0, 940.0])
         .with_min_inner_size([1000.0, 640.0])
-        .with_title("MW5 Remap — joystick binding editor");
+        .with_title("UltimateCockpit — joystick binding editor");
     if let Some(icon) = load_icon() {
         viewport = viewport.with_icon(icon);
     }
     let options = eframe::NativeOptions { viewport, ..Default::default() };
     eframe::run_native(
-        "MW5 Remap",
+        "UltimateCockpit",
         options,
         Box::new(|cc| Ok(Box::new(app::App::new(cc)))),
     )

@@ -8,37 +8,18 @@
 //! Format + vocabulary are from Piranha's official HOTAS Remapping PDF.
 
 use super::{Mw5, Role};
-use crate::games::GameProvider; // brings Mw5::config_path (a trait method) into scope
-use std::sync::atomic::{AtomicBool, Ordering};
 
-/// GUI config-lock flag (default OFF — the user dislikes it and MW5 does NOT reset their
-/// bindings on launch, so the lock isn't needed on this install). When ON, `mw5::save()`
-/// re-applies the read-only flag to GameUserSettings.ini AFTER writing, because a read-only
-/// file is what PREVENTS MW5 (on installs that DO reset) from wiping the joystick bindings
-/// back to stock on its next launch. Mirrors `vjoy::set_active`/`is_active`.
-static CONFIG_LOCKED: AtomicBool = AtomicBool::new(false);
-
-/// Toggle the GUI config-lock flag (🔒 Lock config). Pure in-process state; the live
-/// file's read-only bit is (re)applied by `save()` when locked, and cleared by the
-/// caller (toolbar) the moment the lock is turned OFF so MW5's own menu can edit it.
-pub fn set_config_locked(lock: bool) { CONFIG_LOCKED.store(lock, Ordering::Relaxed); }
-
-/// Is the config-lock on? Default `true`.
-pub fn is_config_locked() -> bool { CONFIG_LOCKED.load(Ordering::Relaxed) }
-
-/// Set/clear the read-only flag on a file. Read-only does NOT make MW5 ignore the file —
-/// it stops MW5 from rewriting the joystick bindings to stock on launch.
-pub fn set_readonly(path: &std::path::Path, ro: bool) -> Result<(), String> {
-    let mut perm = std::fs::metadata(path).map_err(|e| e.to_string())?.permissions();
-    perm.set_readonly(ro);
-    std::fs::set_permissions(path, perm).map_err(|e| e.to_string())
-}
-
-/// Lock/unlock the live GameUserSettings file directly and sync the flag — the
-/// `--lock`/`--unlock` CLI + recovery path.
-pub fn set_config_readonly(lock: bool) -> Result<(), String> {
-    set_config_locked(lock);
-    set_readonly(&Mw5::new().config_path(), lock)
+/// Clear the read-only bit on a file so `save()` can always (re)write it. This app NEVER
+/// makes GameUserSettings.ini read-only; this only UNDOES a read-only flag that a previous
+/// version (or the user/OS) may have left, which would otherwise block writing.
+pub(super) fn clear_readonly(path: &std::path::Path) {
+    if let Ok(meta) = std::fs::metadata(path) {
+        let mut perm = meta.permissions();
+        if perm.readonly() {
+            perm.set_readonly(false);
+            let _ = std::fs::set_permissions(path, perm);
+        }
+    }
 }
 
 /// Path to the live HOTASMappings.Remap (MW5_HOTAS overrides it, for tests).

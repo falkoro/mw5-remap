@@ -5,7 +5,7 @@
 //! of `mod.rs` so the orchestrator stays within the size budget.
 
 use super::devices_markers::{BASE_MARKERS, MHG_HATS, MHG_MARKERS, MHG_MULTI, PEDAL_MARKERS, VKB_HATS, VKB_MARKERS};
-use super::{image_block, order, Marker, MultiMarker, Textures};
+use super::{axes_state, image_block, order, Marker, MultiMarker, Textures};
 use crate::app::theme;
 use crate::games::GameProvider;
 use crate::input::Device;
@@ -132,13 +132,22 @@ pub(super) fn device_scroll(
             ui.add_space(6.0);
         }
 
-        // Raw-axis readout sits BELOW all the pictures, collapsed by default, clearly after them.
+        // Raw-axis readout sits BELOW all the pictures. Open/closed is remembered PER GAME
+        // (axes_state, keyed on p.name()): we fully CONTROL the header's open state so it
+        // honours the saved value even when switching games within a session, and persist
+        // the new value on each toggle. Default OPEN for a game we've not seen.
         ui.add_space(2.0);
         ui.separator();
-        egui::CollapsingHeader::new(egui::RichText::new("Live axes").strong())
-            .default_open(true)
-            .show(ui, |ui| live_axes(ui, devices, p, muted))
-            .header_response
+        let game = p.name();
+        let mut axes_open = axes_state::is_open(game);
+        let resp = egui::CollapsingHeader::new(egui::RichText::new("Live axes").strong())
+            .open(Some(axes_open))
+            .show(ui, |ui| live_axes(ui, devices, p, muted));
+        if resp.header_response.clicked() {
+            axes_open = !axes_open;
+            axes_state::set_open(game, axes_open);
+        }
+        resp.header_response
             .on_hover_text("Raw value of every axis on every device in view — find your axis while testing.");
     });
 }

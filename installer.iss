@@ -1,22 +1,22 @@
-; Inno Setup script for MW5 Remap.
+; Inno Setup script for UltimateCockpit (joystick binding editor).
 ; Per-user install (no admin) so the in-app auto-updater can replace the exe freely.
-; Build with:  ISCC.exe installer.iss   (output: dist\MW5-Remap-Setup.exe)
+; Build with:  ISCC.exe installer.iss   (output: dist\UltimateCockpit-Setup.exe)
 
-#define MyAppName "MW5 Remap"
-#define MyAppVersion "0.6.7"
-#define MyAppExe "MW5-Remap.exe"
+#define MyAppName "UltimateCockpit"
+#define MyAppVersion "0.7.0"
+#define MyAppExe "UltimateCockpit.exe"
 
 [Setup]
 AppId={{8F2A6C31-9B4D-4E27-AA10-3C7E9D2B5F08}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 AppPublisher=Falkoro
-DefaultDirName={localappdata}\Programs\MW5-Remap
+DefaultDirName={localappdata}\Programs\UltimateCockpit
 DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
 PrivilegesRequired=lowest
 OutputDir=dist
-OutputBaseFilename=MW5-Remap-Setup
+OutputBaseFilename=UltimateCockpit-Setup
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
@@ -27,7 +27,7 @@ UninstallDisplayName={#MyAppName}
 Name: "desktopicon"; Description: "Create a &desktop shortcut"; GroupDescription: "Additional icons:"
 
 [Files]
-Source: "MW5-Remap.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "MW5-Remap.exe"; DestDir: "{app}"; DestName: "{#MyAppExe}"; Flags: ignoreversion
 Source: "libunwind.dll"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]

@@ -193,8 +193,10 @@ pub(super) fn central(
         // never paints over the footer) with set_max_width, so ui.columns splits the real
         // width into equal halves — wrapping ui.columns inside a ScrollArea would leave the
         // inner ui horizontally unbounded and land the 2nd column off-screen.
-        let _ = (avail_h, col_w);
-        egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
+        // Give it the FULL remaining panel height so the bindings fill down to the bottom
+        // (no dead whitespace below the last row) and any overflow scrolls within that height.
+        let _ = col_w;
+        egui::ScrollArea::vertical().auto_shrink([false, false]).max_height(avail_h).show(ui, |ui| {
             ui.set_max_width(avail_w);
             ui.columns(ncols, |cols| {
                 for (col, groups_in_col) in cols.iter_mut().zip(&col_groups) {

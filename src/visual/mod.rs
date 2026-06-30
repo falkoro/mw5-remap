@@ -10,6 +10,7 @@
 //! Layout: this `mod.rs` owns the public API, asset/marker tables, and orchestration;
 //! the pure painting helpers live in `draw`.
 
+mod axes_state;
 mod devices_markers;
 mod draw;
 mod layout;
